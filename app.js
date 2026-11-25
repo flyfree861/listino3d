@@ -656,7 +656,9 @@ function readProjectForm() {
 
 function oreIt(ore) {
   const h = Math.floor(ore + 1e-9); const m = Math.round((ore - h) * 60);
-  return m === 60 ? `${h + 1}h` : (m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`);
+  if (m === 60) return `${h + 1}h`;
+  if (h === 0) return `${m} min`;
+  return m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
 }
 
 function updateTotals() {
@@ -1168,9 +1170,9 @@ function renderQuotePage() {
         <select id="qRif"><option value="">— nessuno, stimo io —</option>${refs.map((p) => `<option value="${esc(p.id)}" ${p.id === q.rifId ? 'selected' : ''}>${esc(p.nome)} · ${nf(p.grammi / p.pezzi, 1)} g/pz</option>`).join('')}</select>` : ''}
       <div class="row2">
         <div><label for="qGr">Grammi a pezzo (stima)</label><input id="qGr" inputmode="decimal" value="${numIt(q.grammiPezzo)}" placeholder="es. 5"></div>
-        <div><label for="qMin">Minuti a pezzo</label><input id="qMin" inputmode="decimal" value="${q.tempoManuale ? numIt(q.minutiPezzo) : ''}" placeholder="automatico"></div>
+        <div><label for="qMin">Ore a pezzo</label><input id="qMin" inputmode="decimal" value="${q.tempoManuale ? numIt(Math.round(q.minutiPezzo / 60 * 100) / 100) : ''}" placeholder="automatico"></div>
       </div>
-      <p class="note">Se non scrivi i minuti li stimo dalla velocità media ${speed.fromHistory ? `delle tue stampe (<b>${nf(speed.gh, 1)} g/ora</b>)` : `di <b>${nf(speed.gh)} g/ora</b> (si affina quando avrai qualche progetto salvato)`}. Il filamento è calcolato a ${fmt(D.s.bobina)}/kg.</p>
+      <p class="note">Ore in decimali: 1 = 1 ora, 1,5 = 1 ora e mezza, 0,5 = 30 minuti, 0,25 = 15 minuti. <span id="qOreHint"></span><br>Se lasci vuoto le stimo dalla velocità media ${speed.fromHistory ? `delle tue stampe (<b>${nf(speed.gh, 1)} g/ora</b>)` : `di <b>${nf(speed.gh)} g/ora</b> (si affina quando avrai qualche progetto salvato)`}. Il filamento è calcolato a ${fmt(D.s.bobina)}/kg.</p>
     </div>
     <div class="card">
       <h2>🔩 Accessori a pezzo</h2>
@@ -1198,7 +1200,9 @@ function readQuoteForm() {
   q.cliente = $('qCliente').value.trim();
   q.pezzi = Math.floor(parseNum($('qPezzi').value)) || null;
   q.grammiPezzo = parseNum($('qGr').value);
-  const mins = parseNum($('qMin').value);
+  // Ore in decimali: 1 = 1h, 1,5 = 1h30, 0,5 = 30 minuti
+  const oreIn = parseNum($('qMin').value);
+  const mins = oreIn * 60;
   q.tempoManuale = !isNaN(mins) && mins > 0;
   q.minutiPezzo = q.tempoManuale ? mins : (q.grammiPezzo > 0 ? q.grammiPezzo / averageSpeed(D.projects).gh * 60 : null);
   q.rifId = $('qRif') ? $('qRif').value : '';
@@ -1212,6 +1216,7 @@ function readQuoteForm() {
 
 function updateQuotePreview() {
   const D = data(), q = curQuote;
+  if ($('qOreHint')) $('qOreHint').textContent = q.tempoManuale ? `(= ${oreIt(q.minutiPezzo / 60)} a pezzo)` : '';
   const c = quoteCalc(q, D);
   if (!c) { $('qResult').innerHTML = '<div class="note">Inserisci quantità e grammi a pezzo per vedere il preventivo.</div>'; return; }
   const g = (c.scelto || 0) - c.pi.costoPezzo;
@@ -1302,7 +1307,7 @@ function bindQuotePage() {
       const p = getRec('products', e.target.value);
       if (p && Number(p.pezzi) > 0) {
         $('qGr').value = numIt(Math.round(p.grammi / p.pezzi * 100) / 100);
-        $('qMin').value = numIt(Math.round(p.ore / p.pezzi * 60 * 10) / 10);
+        $('qMin').value = numIt(Math.round(p.ore / p.pezzi * 100) / 100);
         readQuoteForm();
         curQuote.accessori = (p.accessori || []).map((a) => ({ accId: a.accId, qtaPezzo: Math.round(a.qta / p.pezzi * 100) / 100 }));
         return renderQuotePage();
