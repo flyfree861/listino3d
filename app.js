@@ -368,13 +368,16 @@ async function resolveClientSelect(el) {
   const nome = (prompt('Nome del nuovo cliente') || '').trim();
   if (!nome) { el.value = ''; return ''; }
   const id = uuid();
-  put('clients', id, { nome, telefono: '', note: '' });
+  put('clients', id, { nome, telefono: '', email: '', note: '' });
   await committed('Cliente creato');
   const D = data();
   el.innerHTML = clientOptions(id, D);
   el.value = id;
   return id;
 }
+// Numero per WhatsApp: solo cifre, prefisso 39 se è un cellulare italiano senza prefisso
+const waNumber = (tel) => String(tel || '').replace(/[^\d+]/g, '').replace(/^\+/, '').replace(/^00/, '').replace(/^(?=3\d{8,9}$)/, '39');
+const validEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e || '').trim());
 const clientName = (id, D) => (id && D.clientsById[id]?.nome) || '';
 
 function alertsFor(p, D) { return stockAlerts(p, D); }
@@ -1316,7 +1319,7 @@ function renderQuotePage() {
       <div id="qCustomBox" class="${q.fascia === 'custom' ? '' : 'hidden'}"><label for="qCustom">Il tuo prezzo a pezzo (€)</label><input id="qCustom" inputmode="decimal" value="${numIt(q.prezzoCustom)}"></div>
     </div>
     <div class="card" id="qResult"></div>
-    <button class="btn" data-qact="share">📤 Invia preventivo</button>
+    <div id="qSend"></div>
     <button class="btn warn" data-qact="toProject">▶️ Accettato: crea il progetto</button>
     <button class="btn ghost" data-qact="save">Salva</button>
     <button class="btn ghost" data-qact="back">Annulla</button>
@@ -1344,8 +1347,22 @@ function readQuoteForm() {
   $('qCustomBox').classList.toggle('hidden', q.fascia !== 'custom');
 }
 
+function renderQuoteSend(q, D) {
+  const box = $('qSend'); if (!box) return;
+  const c = q.clienteId ? D.clientsById[q.clienteId] : null;
+  const hasTel = c && waNumber(c.telefono).length >= 8, hasMail = c && validEmail(c.email);
+  const html = `
+    ${hasTel ? `<button class="btn" data-qact="sendWa">💬 Invia su WhatsApp a ${esc(c.nome)}</button>` : ''}
+    ${hasMail ? `<button class="btn" data-qact="sendMail">✉️ Invia per email a ${esc(c.nome)}</button>` : ''}
+    <button class="btn ${hasTel || hasMail ? 'ghost' : ''}" data-qact="share">📤 ${hasTel || hasMail ? 'Altro modo (condividi / copia)' : 'Invia preventivo'}</button>
+    ${c && !hasTel && !hasMail ? `<p class="note">Aggiungi telefono o email a ${esc(c.nome)} (in 👤 Clienti) per inviarglielo direttamente.</p>` : ''}`;
+  // ridisegno solo se cambia: altrimenti un tocco subito dopo aver scritto in un campo andrebbe perso
+  if (box.dataset.html !== html) { box.innerHTML = html; box.dataset.html = html; }
+}
+
 function updateQuotePreview() {
   const D = data(), q = curQuote;
+  renderQuoteSend(q, D);
   if ($('qOreHint')) $('qOreHint').textContent = q.tempoManuale ? `(= ${oreIt(q.minutiPezzo / 60)} a pezzo)` : '';
   const c = quoteCalc(q, D);
   if (!c) { $('qResult').innerHTML = '<div class="note">Inserisci quantità e grammi a pezzo per vedere il preventivo.</div>'; return; }
@@ -1394,6 +1411,14 @@ async function quoteAction(act) {
   const saveQ = () => { const { isNew, ...d } = q; put('quotes', q.id, d); q.isNew = false; };
 
   if (act === 'save') { saveQ(); await committed('Preventivo salvato'); projTab = 'quotes'; return go('projects'); }
+  if (act === 'sendWa' || act === 'sendMail') {
+    saveQ(); await committed();
+    const cl = D.clientsById[q.clienteId];
+    const text = `Ciao ${cl.nome},\necco il preventivo che mi hai chiesto:\n\n` + quoteText(q, c);
+    if (act === 'sendWa') window.open(`https://wa.me/${waNumber(cl.telefono)}?text=${encodeURIComponent(text)}`, '_blank');
+    else location.href = `mailto:${cl.email.trim()}?subject=${encodeURIComponent('Preventivo – ' + q.nome)}&body=${encodeURIComponent(text)}`;
+    return;
+  }
   if (act === 'share') {
     saveQ(); await committed();
     const text = quoteText(q, c);
@@ -1487,14 +1512,19 @@ function openClient(id) {
   const c = curClient, D = data();
   const st = c.isNew ? null : clientStats(c, D);
   const tel = String(c.telefono || '').replace(/[^\d+]/g, '');
-  const wa = tel.replace(/^\+/, '').replace(/^(?=3\d{8,9}$)/, '39');
+  const wa = waNumber(c.telefono);
+  const mail = validEmail(c.email) ? c.email.trim() : '';
   $('clientPage').innerHTML = `
     <div class="card">
       <label for="kNome">Nome</label><input id="kNome" value="${esc(c.nome)}" placeholder="es. Mario Rossi, Bar Sport">
       <label for="kTel">Telefono</label><input id="kTel" type="tel" inputmode="tel" value="${esc(c.telefono || '')}" placeholder="facoltativo">
+      <label for="kEmail">Email</label><input id="kEmail" type="email" inputmode="email" autocomplete="email" value="${esc(c.email || '')}" placeholder="facoltativa">
       <label for="kNote">Note</label><input id="kNote" value="${esc(c.note || '')}" placeholder="facoltativo">
-      ${tel ? `<div class="row2" style="margin-top:10px"><a class="btn ghost small" style="text-align:center;text-decoration:none" href="tel:${esc(tel)}">📞 Chiama</a>
-        <a class="btn ghost small" style="text-align:center;text-decoration:none" href="https://wa.me/${esc(wa)}" target="_blank" rel="noopener">💬 WhatsApp</a></div>` : ''}
+      ${tel || mail ? `<div class="row2" style="margin-top:10px">
+        ${tel ? `<a class="btn ghost small" style="text-align:center;text-decoration:none" href="tel:${esc(tel)}">📞 Chiama</a>
+        <a class="btn ghost small" style="text-align:center;text-decoration:none" href="https://wa.me/${esc(wa)}" target="_blank" rel="noopener">💬 WhatsApp</a>` : ''}
+        ${mail ? `<a class="btn ghost small" style="text-align:center;text-decoration:none" href="mailto:${esc(mail)}">✉️ Email</a>` : ''}
+      </div>` : ''}
     </div>
     ${st ? `<div class="card">
       <div class="stats">
@@ -1523,7 +1553,9 @@ async function clientAction(act) {
   }
   const nome = $('kNome').value.trim();
   if (!nome) return toast('Scrivi il nome');
-  put('clients', curClient.id, { nome, telefono: $('kTel').value.trim(), note: $('kNote').value.trim() });
+  const email = $('kEmail').value.trim();
+  if (email && !validEmail(email)) return toast('Email non valida');
+  put('clients', curClient.id, { nome, telefono: $('kTel').value.trim(), email, note: $('kNote').value.trim() });
   await committed(curClient.isNew ? 'Cliente aggiunto' : 'Salvato');
   projTab = 'clients'; go('projects');
 }
