@@ -59,7 +59,7 @@ In alto a destra vedi lo stato: *Sincronizzato*, *N da inviare* oppure *Offline*
 - **Regali:** spunta *È un regalo*. Con 0 pezzi di recupero il costo resta una perdita; con un numero (es. 30) quel costo viene aggiunto a rate al prezzo suggerito dei prossimi 30 pezzi che metti in produzione.
 - **Scarti e vendite:** sui progetti in produzione o completati indichi i pezzi venuti male e registri le vendite (pezzi, prezzo, data).
 - **Storico:** i progetti completati, con i prezzi. Puoi registrare altre vendite, riaprirli o duplicarli come nuovo progetto.
-- **Magazzino:** le bobine (colore, peso, prezzo pagato, grammi rimasti) e gli accessori comprati all'ingrosso (costo unitario e pezzi rimasti).
+- **Magazzino:** le bobine (colore, materiale, marca, peso, prezzo pagato, grammi rimasti) e gli accessori comprati all'ingrosso (costo unitario e pezzi rimasti).
 - **Guadagni:** il bilancio (incassato meno stampante, bobine, accessori ed energia, più il valore di ciò che hai in magazzino), quanto hai ripagato della stampante, il grafico per mese e i dettagli su regali, recuperi e scarti.
 - **Impostazioni:** energia, consumo, €/kg di riserva, stampante, ore di ammortamento, % di fallite e ricarichi. Valgono per entrambi i telefoni.
 

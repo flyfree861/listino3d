@@ -412,7 +412,7 @@ function openProject(id, fromView) {
 }
 
 function spoolLabel(sp, usage) {
-  return `${sp.nome || 'Bobina'}${sp.materiale ? ' ' + sp.materiale : ''} · ${nf(Math.max(0, spoolRemaining(sp, usage)))} g`;
+  return `${sp.nome || 'Bobina'}${sp.materiale ? ' ' + sp.materiale : ''}${sp.marca ? ' ' + sp.marca : ''} · ${nf(Math.max(0, spoolRemaining(sp, usage)))} g`;
 }
 
 function renderProjectPage() {
@@ -852,7 +852,7 @@ function spoolCard(sp, usage) {
   const low = rem < 150 && !sp.esaurita;
   return `<div class="card tap" data-spool="${esc(sp.id)}">
     <div class="row-top"><div class="name"><span class="swatch" style="background:${esc(sp.hex || '#999999')}"></span>${esc(sp.nome || 'Bobina')}</div>
-      <div class="muted">${esc(sp.materiale || '')}</div></div>
+      <div class="muted">${esc([sp.materiale, sp.marca].filter(Boolean).join(' · '))}</div></div>
     <div class="bar"><div style="width:${pct}%;background:${esc(sp.hex || 'var(--accent)')}"></div></div>
     <div class="line"><b>${nf(rem)} g</b> rimasti su ${nf(sp.peso)} g (${nf(pct)}%) · pagata ${fmt(sp.prezzo)}${low ? ' · <b class="neg">quasi finita</b>' : ''}</div>
   </div>`;
@@ -896,8 +896,8 @@ function spoolListHtml() {
   // riepilogo per colore
   const byColor = {};
   for (const sp of active) {
-    const k = `${sp.nome || 'Bobina'}|${sp.materiale || ''}|${sp.hex || ''}`;
-    byColor[k] = byColor[k] || { nome: sp.nome, materiale: sp.materiale, hex: sp.hex, n: 0, g: 0 };
+    const k = `${sp.nome || 'Bobina'}|${sp.materiale || ''}|${sp.marca || ''}|${sp.hex || ''}`;
+    byColor[k] = byColor[k] || { nome: sp.nome, materiale: sp.materiale, marca: sp.marca, hex: sp.hex, n: 0, g: 0 };
     byColor[k].n++; byColor[k].g += Math.max(0, spoolRemaining(sp, D.usage));
   }
   return D.spools.length ? `
@@ -909,7 +909,7 @@ function spoolListHtml() {
         <div class="stat"><small>Colori</small><b>${Object.keys(byColor).length}</b></div>
       </div>
       ${Object.values(byColor).length ? `<table class="tbl" style="margin-top:10px">${Object.values(byColor).sort((a, b) => String(a.nome).localeCompare(String(b.nome))).map((c) =>
-        `<tr><td><span class="swatch" style="background:${esc(c.hex || '#999')}"></span>${esc(c.nome || 'Bobina')} ${esc(c.materiale || '')} · ${c.n} bob.</td><td>${nf(c.g)} g</td></tr>`).join('')}</table>` : ''}
+        `<tr><td><span class="swatch" style="background:${esc(c.hex || '#999')}"></span>${esc(c.nome || 'Bobina')} ${esc(c.materiale || '')}${c.marca ? ' ' + esc(c.marca) : ''} · ${c.n} bob.</td><td>${nf(c.g)} g</td></tr>`).join('')}</table>` : ''}
     </div>
     ${active.sort(sort).map((sp) => spoolCard(sp, D.usage)).join('')}
     ${done.length ? `<details><summary>Finite o archiviate (${done.length})</summary>${done.sort(sort).map((sp) => spoolCard(sp, D.usage)).join('')}</details>` : ''}`
@@ -938,6 +938,8 @@ function renderSpoolPage() {
         <div><label for="bHex">Colore</label><input id="bHex" type="color" value="${esc(sp.hex || '#1f6feb')}"></div>
         <div><label for="bMat">Materiale</label><input id="bMat" value="${esc(sp.materiale || '')}" placeholder="PLA"></div>
       </div>
+      <label for="bMarca">Marca</label><input id="bMarca" value="${esc(sp.marca || '')}" placeholder="es. Anycubic, Bambu Lab, eSun" list="marcheList">
+      <datalist id="marcheList">${[...new Set(data().spools.map((x) => x.marca).filter(Boolean))].map((m) => `<option value="${esc(m)}">`).join('')}</datalist>
       <div class="row2">
         <div><label for="bPeso">Peso iniziale (g)</label><input id="bPeso" inputmode="decimal" value="${numIt(sp.peso)}"></div>
         <div><label for="bPrezzo">Prezzo pagato (€)</label><input id="bPrezzo" inputmode="decimal" value="${numIt(sp.prezzo)}"></div>
@@ -969,7 +971,7 @@ async function spoolAction(act) {
   if (!nome) return toast('Scrivi il colore o un nome');
   if (!(peso > 0)) return toast('Peso non valido');
   if (!(prezzo >= 0)) return toast('Prezzo non valido');
-  const d = { nome, hex: $('bHex').value, materiale: $('bMat').value.trim(), peso, prezzo, dataAcquisto: $('bData').value || today(),
+  const d = { nome, hex: $('bHex').value, materiale: $('bMat').value.trim(), marca: $('bMarca').value.trim(), peso, prezzo, dataAcquisto: $('bData').value || today(),
     esaurita: $('bDone') ? $('bDone').checked : false };
   if (curSpool.isNew) {
     const qty = Math.max(1, Math.min(50, Math.floor(parseNum($('bQty').value) || 1)));
