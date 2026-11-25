@@ -63,7 +63,8 @@ In alto a destra vedi lo stato: *Sincronizzato*, *N da inviare* oppure *Offline*
 - **Guadagni:** il bilancio (incassato meno stampante, bobine, accessori ed energia, più il valore di ciò che hai in magazzino), quanto hai ripagato della stampante, il grafico per mese e i dettagli su regali, recuperi e scarti.
 - **Impostazioni:** energia, consumo, €/kg di riserva, stampante, ore di ammortamento, % di fallite e ricarichi. Valgono per entrambi i telefoni.
 
-**Formula:** costo pezzo = (filamento + energia + ammortamento) × (1 + % fallite) + accessori, il tutto ÷ pezzi per piatto.
+**Formula:** Nel progetto inserisci i dati di un piatto (pezzi, grammi, tempo) e il numero di piatti: l'app calcola i totali.
+costo pezzo = (filamento + energia + ammortamento) × (1 + % fallite) + accessori, il tutto ÷ pezzi totali.
 I prezzi suggeriti sono il costo × il ricarico (+ l'eventuale quota di recupero regali), arrotondati ai 10 centesimi.
 
 ## Aggiornare l'app
