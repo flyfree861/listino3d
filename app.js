@@ -140,7 +140,6 @@ function pendingCount() {
 
 const normProject = (p) => ({
   ...p,
-  piatti: Number(p.piatti) > 0 ? Number(p.piatti) : 1,
   pezziPiatto: p.pezziPiatto ?? (Number(p.piatti) > 0 ? p.pezzi / p.piatti : p.pezzi),
   grammiPiatto: p.grammiPiatto ?? (Number(p.piatti) > 0 ? p.grammi / p.piatti : p.grammi),
   orePiatto: p.orePiatto ?? (Number(p.piatti) > 0 && p.ore != null ? p.ore / p.piatti : p.ore),
@@ -363,7 +362,7 @@ function projectCard(p, D) {
   return `<div class="card tap" data-project="${esc(p.id)}">
     <div class="pills">${statePill(p)}</div>
     <div class="row-top"><div class="name">${esc(p.nome)}</div><div class="muted">${sub}</div></div>
-    <div class="muted">${nf(p.pezzi)} pezzi${p.piatti > 1 ? ` · ${nf(p.piatti)} piatti` : ''}${p.note ? ' · ' + esc(p.note) : ''}</div>
+    <div class="muted">${nf(p.pezzi)} pezzi${p.note ? ' · ' + esc(p.note) : ''}</div>
     ${body}</div>`;
 }
 
@@ -405,7 +404,7 @@ function openProject(id, fromView) {
     cur = normProject(JSON.parse(JSON.stringify(p)));
     cur.isNew = false;
   } else {
-    cur = { id: uuid(), isNew: true, nome: '', stato: 'bozza', piatti: 1, filamenti: [], accessori: [], regalo: false, recuperoPezzi: 0, scarti: 0 };
+    cur = { id: uuid(), isNew: true, nome: '', stato: 'bozza', filamenti: [], accessori: [], regalo: false, recuperoPezzi: 0, scarti: 0 };
   }
   renderProjectPage();
   show('project');
@@ -448,7 +447,9 @@ function renderProjectPage() {
       <div class="pills">${statePill(p)}</div>
       <label for="pNome">Nome progetto</label>
       <input id="pNome" value="${esc(p.nome || '')}" placeholder="es. Medagliette">
-      <p class="note" style="margin:10px 0 0">Dati di <b>un piatto</b>, come li leggi dallo slicer:</p>
+      <label for="pTotPezzi">Pezzi da produrre (totale ordine)</label>
+      <input id="pTotPezzi" inputmode="numeric" value="${numIt(p.pezzi)}" placeholder="es. 100" ${dis}>
+      <p class="note" style="margin:12px 0 0">Dati dello slicer per <b>un piatto</b> di prova: servono a calcolare grammi e tempo per pezzo.</p>
       <div class="row2">
         <div><label for="pPezzi">Pezzi per piatto</label><input id="pPezzi" inputmode="numeric" value="${numIt(p.pezziPiatto)}" placeholder="15" ${dis}></div>
         <div><label for="pGrammi">Grammi per piatto</label><input id="pGrammi" inputmode="decimal" value="${numIt(p.grammiPiatto)}" placeholder="71,97" ${dis}></div>
@@ -457,8 +458,6 @@ function renderProjectPage() {
         <div><label for="pOre">Ore per piatto</label><input id="pOre" inputmode="numeric" value="${hasOre ? hh : ''}" placeholder="8" ${dis}></div>
         <div><label for="pMin">Minuti</label><input id="pMin" inputmode="numeric" value="${hasOre ? m : ''}" placeholder="20" ${dis}></div>
       </div>
-      <label for="pPiatti">Numero di piatti</label>
-      <input id="pPiatti" inputmode="numeric" value="${numIt(p.piatti || 1)}" placeholder="1" ${dis}>
       <div class="line" id="pTot"></div>
       <label for="pNote">Note / cliente / destinatario</label>
       <input id="pNote" value="${esc(p.note || '')}" placeholder="facoltativo">
@@ -580,16 +579,17 @@ function readProjectForm() {
   cur.nome = v('pNome').trim();
   cur.note = v('pNote').trim();
   if (cur.stato === 'bozza') {
-    const n = Math.floor(parseNum(v('pPiatti')));
-    cur.piatti = n > 0 ? n : 1;
+    delete cur.piatti;
     cur.pezziPiatto = parseNum(v('pPezzi'));
     cur.grammiPiatto = parseNum(v('pGrammi'));
     const o = parseNum(v('pOre')), mi = parseNum(v('pMin'));
     cur.orePiatto = (isNaN(o) && isNaN(mi)) ? null : (o || 0) + (mi || 0) / 60;
-    // Totali del progetto (usati in tutti i calcoli)
-    cur.pezzi = cur.pezziPiatto * cur.piatti;
-    cur.grammi = Math.round(cur.grammiPiatto * cur.piatti * 100) / 100;
-    cur.ore = cur.orePiatto === null ? null : cur.orePiatto * cur.piatti;
+    // Totali del progetto (usati in tutti i calcoli): proporzionali ai pezzi da produrre
+    const tot = Math.floor(parseNum(v('pTotPezzi')));
+    cur.pezzi = tot > 0 ? tot : cur.pezziPiatto;
+    const k = cur.pezziPiatto > 0 ? cur.pezzi / cur.pezziPiatto : NaN;
+    cur.grammi = Math.round(cur.grammiPiatto * k * 100) / 100;
+    cur.ore = cur.orePiatto === null ? null : cur.orePiatto * k;
     cur.regalo = $('pRegalo').checked;
     cur.recuperoPezzi = Math.max(0, Math.floor(parseNum(v('pRecPezzi')) || 0));
     document.querySelectorAll('.aSpool').forEach((el) => { cur.filamenti[el.dataset.i].spoolId = el.value; });
@@ -611,7 +611,7 @@ function updateTotals() {
   const el = $('pTot'); if (!el) return;
   const p = cur;
   if (!(p.pezzi > 0) || !(p.ore > 0)) { el.innerHTML = ''; return; }
-  el.innerHTML = `Totale progetto: <b>${nf(p.pezzi)} pezzi</b> · <b>${nf(p.grammi, 2)} g</b> · <b>${oreIt(p.ore)}</b> di stampa${p.piatti > 1 ? ` (${nf(p.piatti)} piatti)` : ''}`;
+  el.innerHTML = `Totale progetto: <b>${nf(p.pezzi)} pezzi</b> · <b>${nf(p.grammi, 1)} g</b> di filamento · <b>${oreIt(p.ore)}</b> di stampa`;
 }
 
 function updateProjectPreview() {
@@ -684,7 +684,7 @@ function updateProjectPreview() {
 
 function validateProject(forProduction) {
   if (!cur.nome) { toast('Scrivi il nome del progetto'); return false; }
-  if (!(cur.pezzi > 0) || !(cur.grammi >= 0) || !(cur.ore > 0)) { toast('Controlla pezzi, grammi, tempo e numero di piatti'); return false; }
+  if (!(cur.pezzi > 0) || !(cur.grammi >= 0) || !(cur.ore > 0)) { toast('Controlla pezzi da produrre e dati dello slicer'); return false; }
   if (cur.prezzo !== null && isNaN(cur.prezzo)) { toast('Prezzo non valido'); return false; }
   for (const a of cur.filamenti) {
     if (!a.spoolId) { toast('Scegli la bobina in ogni riga (o rimuovi la riga)'); return false; }
@@ -782,7 +782,7 @@ async function projectAction(act) {
     const src = cur;
     cur = {
       id: uuid(), isNew: true, stato: 'bozza', nome: src.nome, note: '', pezzi: src.pezzi, grammi: src.grammi, ore: src.ore,
-      piatti: src.piatti, pezziPiatto: src.pezziPiatto, grammiPiatto: src.grammiPiatto, orePiatto: src.orePiatto,
+      pezziPiatto: src.pezziPiatto, grammiPiatto: src.grammiPiatto, orePiatto: src.orePiatto,
       prezzo: src.prezzo, filamenti: src.filamenti.map((a) => ({ ...a })), accessori: src.accessori.map((a) => ({ ...a })), regalo: false, recuperoPezzi: 0, scarti: 0
     };
     await committed();
