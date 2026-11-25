@@ -147,7 +147,7 @@
   </section>
 
   <section id="v-projects" class="hidden">
-    <div class="seg" id="projSeg"><button data-ptab="projects" class="active">📋 Progetti</button><button data-ptab="quotes">💬 Preventivi</button></div>
+    <div class="seg" id="projSeg"><button data-ptab="projects" class="active">📋 Progetti</button><button data-ptab="quotes">💬 Preventivi</button><button data-ptab="clients">👤 Clienti</button></div>
     <input class="search" id="searchProjects" type="search" placeholder="Cerca…">
     <div id="projectsList"></div>
   </section>
@@ -162,6 +162,8 @@
   <section id="v-spools" class="hidden"><div id="spoolsPage"></div></section>
 
   <section id="v-quote" class="hidden"><div id="quotePage"></div></section>
+
+  <section id="v-client" class="hidden"><div id="clientPage"></div></section>
 
   <section id="v-spool" class="hidden"><div id="spoolPage"></div></section>
 
@@ -194,6 +196,14 @@
       </div>
       <label for="sRicPers">Personalizzato</label><input id="sRicPers" inputmode="decimal">
       <p class="note">I prezzi suggeriti sono arrotondati ai 10 centesimi. Le modifiche valgono per entrambi i telefoni e non cambiano i costi dei progetti già messi in produzione.</p>
+    </div>
+    <div class="card">
+      <h2>⚠️ Avvisi scorte</h2>
+      <div class="row2">
+        <div><label for="sSogliaBobina">Soglia bobine (g)</label><input id="sSogliaBobina" inputmode="decimal"></div>
+        <div><label for="sSogliaAcc">Soglia accessori (pz)</label><input id="sSogliaAcc" inputmode="decimal"></div>
+      </div>
+      <p class="note">Un progetto viene segnalato se il materiale in magazzino non basta, o se dopo averlo prodotto ne resterebbe meno della soglia. Le soglie valgono anche per segnare "quasi finita" una bobina o un accessorio. Metti 0 per avvisare solo quando il materiale non basta.</p>
     </div>
     <button class="btn" id="saveSettingsBtn">Salva impostazioni</button>
     <div class="card" style="margin-top:16px">

@@ -2,7 +2,7 @@ import { firebaseConfig, ALLOWED_EMAILS } from './firebase-config.js';
 import {
   DEFAULT_SETTINGS, parseNum, projectCosts, effectiveCosts, priceInfo, spoolUsage, spoolRemaining,
   spoolEurPerGram, giftStatus, allocateRecovery, projectResult, economics, remoteWins,
-  accessoryUnitCost, accessoryUsage, accessoryRemaining, averageSpeed
+  accessoryUnitCost, accessoryUsage, accessoryRemaining, averageSpeed, stockAlerts
 } from './calc.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/13.4.0/firebase-app.js';
 import {
@@ -13,7 +13,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/13.4.0/firebase-firestore.js';
 
 const SQLJS_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.17.0/';
-const COLLS = ['products', 'spools', 'sales', 'accessories', 'quotes'];   // progetti, bobine, vendite, accessori
+const COLLS = ['products', 'spools', 'sales', 'accessories', 'quotes', 'clients'];   // progetti, bobine, vendite, accessori
 const $ = (id) => document.getElementById(id);
 const eur = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
 const fmt = (n) => (n === null || n === undefined || isNaN(n)) ? '–' : eur.format(n);
@@ -158,7 +158,9 @@ function data() {
   const accById = Object.fromEntries(accessories.map((x) => [x.id, x]));
   const accUsage = accessoryUsage(projects);
   const quotes = list('quotes');
-  return { s, projects, spools, sales, spoolsById, usage, accessories, accById, accUsage, quotes };
+  const clients = list('clients').sort((a, b) => String(a.nome).localeCompare(String(b.nome)));
+  const clientsById = Object.fromEntries(clients.map((c) => [c.id, c]));
+  return { s, projects, spools, sales, spoolsById, usage, accessories, accById, accUsage, quotes, clients, clientsById };
 }
 
 // ---------------------------------------------------------------------------
@@ -273,9 +275,9 @@ async function committed(msg) {
 // ---------------------------------------------------------------------------
 // Navigazione
 // ---------------------------------------------------------------------------
-const VIEWS = ['loading', 'login', 'projects', 'history', 'project', 'quote', 'spools', 'spool', 'acc', 'money', 'settings'];
-const TITLES = { projects: 'Progetti', history: 'Storico', project: 'Progetto', quote: 'Preventivo', spools: 'Magazzino bobine', spool: 'Bobina', acc: 'Accessorio', money: 'Guadagni', settings: 'Impostazioni' };
-const NAV_OF = { quote: 'projects', project: 'projects', spool: 'spools', acc: 'spools' };
+const VIEWS = ['loading', 'login', 'projects', 'history', 'project', 'quote', 'client', 'spools', 'spool', 'acc', 'money', 'settings'];
+const TITLES = { projects: 'Progetti', history: 'Storico', project: 'Progetto', quote: 'Preventivo', client: 'Cliente', spools: 'Magazzino bobine', spool: 'Bobina', acc: 'Accessorio', money: 'Guadagni', settings: 'Impostazioni' };
+const NAV_OF = { client: 'projects', quote: 'projects', project: 'projects', spool: 'spools', acc: 'spools' };
 let currentView = 'loading';
 let backView = 'projects';
 
@@ -353,13 +355,58 @@ function deliveryPill(p) {
 }
 const byDelivery = (a, b) => (a.dataConsegna || '9999').localeCompare(b.dataConsegna || '9999');
 
+// Menu a tendina dei clienti (con "nuovo cliente")
+function clientOptions(sel, D) {
+  return '<option value="">— nessun cliente —</option>' +
+    D.clients.map((c) => `<option value="${esc(c.id)}" ${c.id === sel ? 'selected' : ''}>👤 ${esc(c.nome)}</option>`).join('') +
+    (sel && !D.clientsById[sel] ? `<option value="${esc(sel)}" selected>(cliente eliminato)</option>` : '') +
+    '<option value="__new">➕ Nuovo cliente…</option>';
+}
+// Se è stato scelto "Nuovo cliente" lo crea al volo e restituisce l'id
+async function resolveClientSelect(el) {
+  if (el.value !== '__new') return el.value;
+  const nome = (prompt('Nome del nuovo cliente') || '').trim();
+  if (!nome) { el.value = ''; return ''; }
+  const id = uuid();
+  put('clients', id, { nome, telefono: '', note: '' });
+  await committed('Cliente creato');
+  const D = data();
+  el.innerHTML = clientOptions(id, D);
+  el.value = id;
+  return id;
+}
+const clientName = (id, D) => (id && D.clientsById[id]?.nome) || '';
+
+function alertsFor(p, D) { return stockAlerts(p, D); }
+function alertText(a) {
+  const u = a.tipo === 'bobina' ? 'g' : 'pz';
+  const icon = a.tipo === 'bobina' ? '🧵' : '🔩';
+  const n = `<b>${esc(a.nome)}</b>`;
+  if (a.level === 'bad') {
+    return a.bozza
+      ? `${icon} ${n}: servono ${nf(a.need, 1)} ${u} ma ne restano ${nf(Math.max(0, a.rem), 1)} ${u}. Il progetto potrebbe non completarsi (mancano ${nf(-a.after, 1)} ${u}).`
+      : `${icon} ${n}: in magazzino ne mancano ${nf(-a.after, 1)} ${u} per questo progetto. Potrebbe non completarsi.`;
+  }
+  return a.bozza
+    ? `${icon} ${n}: dopo questo progetto resteranno solo ${nf(a.after, 1)} ${u} (soglia ${nf(a.soglia)} ${u}).`
+    : `${icon} ${n}: in magazzino restano solo ${nf(a.after, 1)} ${u} (soglia ${nf(a.soglia)} ${u}).`;
+}
+function alertsHtml(list) {
+  if (!list.length) return '';
+  const bad = list.some((a) => a.level === 'bad');
+  return `<div class="card hero ${bad ? 'bad' : 'mid'}"><h2>⚠️ Scorte in magazzino</h2>
+    <div class="breakdown" style="color:var(--text)">${list.map(alertText).join('<br>')}</div></div>`;
+}
+
 const statePill = (p) => `<span class="pill ${p.stato}">${STATI[p.stato]}</span>${p.regalo ? '<span class="pill regalo">🎁 Regalo</span>' : ''}`;
 
 function projectCard(p, D) {
   const costi = effectiveCosts(p, D.s, D.spoolsById, D.accById);
   const res = projectResult(p, D.sales, D.s, D.spoolsById, D.accById);
   let recEuro = p.recuperoEuro;
-  if (p.stato === 'bozza' && !p.regalo && costi) recEuro = allocateRecovery(p.pezzi, giftStatus(D.projects.filter((x) => x.id !== p.id))).reduce((a, r) => a + r.euro, 0);
+  if (p.stato === 'bozza' && !p.regalo && costi) recEuro = allocateRecovery(p.pezzi, giftStatus(D.projects.filter((x) => x.id !== p.id)), p.clienteId).reduce((a, r) => a + r.euro, 0);
+  const al = alertsFor(p, D);
+  const alPill = al.length ? `<span class="pill ${al.some((a) => a.level === 'bad') ? 'scaduta' : 'produzione'}">⚠️ Scorte</span>` : '';
   const pi = costi ? priceInfo(costi, Number(p.pezzi), recEuro, D.s) : null;
   let body = '';
   if (!pi) body = '<div class="line">Dati incompleti</div>';
@@ -381,9 +428,9 @@ function projectCard(p, D) {
   }
   const sub = p.stato === 'completato' ? `completato il ${dateIt(p.completatoAt)}` : `costo ${pi ? fmt(res?.costoPezzoBuono ?? pi.costoPezzo) : '–'} /pz`;
   return `<div class="card tap" data-project="${esc(p.id)}">
-    <div class="pills">${statePill(p)}${deliveryPill(p)}</div>
+    <div class="pills">${statePill(p)}${deliveryPill(p)}${alPill}</div>
     <div class="row-top"><div class="name">${esc(p.nome)}</div><div class="muted">${sub}</div></div>
-    <div class="muted">${nf(p.pezzi)} pezzi${p.note ? ' · ' + esc(p.note) : ''}</div>
+    <div class="muted">${nf(p.pezzi)} pezzi${clientName(p.clienteId, D) ? ' · 👤 ' + esc(clientName(p.clienteId, D)) : ''}${p.note ? ' · ' + esc(p.note) : ''}</div>
     ${body}</div>`;
 }
 
@@ -391,16 +438,19 @@ let projTab = 'projects';
 function renderProjects() {
   document.querySelectorAll('#projSeg button').forEach((b) => b.classList.toggle('active', b.dataset.ptab === projTab));
   if (projTab === 'quotes') return renderQuotes();
+  if (projTab === 'clients') return renderClients();
   const D = data();
   const q = $('searchProjects').value.trim().toLowerCase();
-  const match = (p) => !q || String(p.nome).toLowerCase().includes(q) || String(p.note || '').toLowerCase().includes(q);
+  const match = (p) => !q || `${p.nome} ${p.note || ''} ${clientName(p.clienteId, D)}`.toLowerCase().includes(q);
   const prod = D.projects.filter((p) => p.stato === 'produzione' && match(p)).sort((a, b) => byDelivery(a, b) || (b.prodottoAt || 0) - (a.prodottoAt || 0));
   const bozze = D.projects.filter((p) => p.stato === 'bozza' && match(p)).sort((a, b) => byDelivery(a, b) || String(a.nome).localeCompare(String(b.nome)));
   if (!prod.length && !bozze.length) {
     $('projectsList').innerHTML = `<div class="empty">${q ? 'Nessun progetto trovato.' : 'Nessun progetto attivo.<br>Tocca <b>+</b> per crearne uno: puoi usarlo anche solo per calcolare un prezzo.'}</div>`;
     return;
   }
+  const risk = [...prod, ...bozze].filter((p) => alertsFor(p, D).length).length;
   $('projectsList').innerHTML =
+    (risk ? `<div class="card hero mid"><b>⚠️ ${risk === 1 ? '1 progetto' : risk + ' progetti'} con scorte scarse in magazzino</b><div class="note" style="color:var(--text)">Aprili per vedere quali bobine o accessori mancano.</div></div>` : '') +
     (prod.length ? `<h3>In produzione</h3>${prod.map((p) => projectCard(p, D)).join('')}` : '') +
     (bozze.length ? `<h3>Bozze e preventivi</h3>${bozze.map((p) => projectCard(p, D)).join('')}` : '');
 }
@@ -475,12 +525,14 @@ function renderProjectPage() {
       <button class="btn ghost" data-act="back">Annulla</button>
       ${p.isNew ? '' : '<button class="btn danger" data-act="delete">Elimina progetto</button>'}`;
   } else if (p.stato === 'produzione') {
-    actions = `<button class="btn ok" data-act="complete">✅ Completato: sposta nello storico</button>
+    actions = `${p.regalo ? '<button class="btn" data-act="newOrder">🔁 Nuovo ordine di questo pezzo</button>' : ''}
+      <button class="btn ok" data-act="complete">✅ Completato: sposta nello storico</button>
       <button class="btn ghost" data-act="save">Salva modifiche</button>
       <button class="btn ghost" data-act="toDraft">↩️ Riporta in bozza</button>
       <button class="btn danger" data-act="delete">Elimina progetto</button>`;
   } else {
-    actions = `<button class="btn ghost" data-act="save">Salva modifiche</button>
+    actions = `${p.regalo ? '<button class="btn" data-act="newOrder">🔁 Nuovo ordine di questo pezzo</button>' : ''}
+      <button class="btn ghost" data-act="save">Salva modifiche</button>
       <button class="btn ghost" data-act="duplicate">📄 Duplica come nuovo progetto</button>
       <button class="btn ghost" data-act="reopen">↩️ Riapri (rimetti in produzione)</button>
       <button class="btn danger" data-act="delete">Elimina progetto</button>`;
@@ -503,7 +555,9 @@ function renderProjectPage() {
         <div><label for="pMin">Minuti</label><input id="pMin" inputmode="numeric" value="${hasOre ? m : ''}" placeholder="20" ${dis}></div>
       </div>
       <div class="line" id="pTot"></div>
-      <label for="pNote">Note / cliente / destinatario</label>
+      <label for="pCliente">Cliente</label>
+      <select id="pCliente">${clientOptions(p.clienteId, data())}</select>
+      <label for="pNote">Note</label>
       <input id="pNote" value="${esc(p.note || '')}" placeholder="facoltativo">
       <label for="pConsegna">Data di consegna (facoltativa)</label>
       <input id="pConsegna" type="date" value="${esc(p.dataConsegna || '')}">
@@ -526,7 +580,7 @@ function renderProjectPage() {
       <div id="pGiftBox" class="${p.regalo ? '' : 'hidden'}">
         <label for="pRecPezzi">Recupera il costo sui prossimi … pezzi</label>
         <input id="pRecPezzi" inputmode="numeric" value="${numIt(p.recuperoPezzi ?? 0)}" ${dis}>
-        <p class="note">0 = regalo e basta: il costo resta una perdita. Con un numero, il costo viene aggiunto un po' alla volta al prezzo suggerito dei prossimi pezzi che metti in produzione (di qualsiasi progetto).</p>
+        <p class="note">0 = regalo e basta: il costo resta una perdita. Con un numero, il costo viene aggiunto un po' alla volta al prezzo suggerito dei prossimi pezzi che metti in produzione: <span id="pGiftWho"></span>.</p>
       </div>
       <div id="pPriceBox" class="${p.regalo ? 'hidden' : ''}">
         <label for="pPrezzo">Il tuo prezzo di vendita a pezzo</label>
@@ -534,6 +588,7 @@ function renderProjectPage() {
       </div>
     </div>
 
+    <div id="pAlerts"></div>
     <div class="card" id="pResult"></div>
 
     ${locked ? `<div class="card">
@@ -625,6 +680,7 @@ function readProjectForm() {
   const v = (id) => $(id) ? $(id).value : undefined;
   cur.nome = v('pNome').trim();
   cur.note = v('pNote').trim();
+  if ($('pCliente') && $('pCliente').value !== '__new') cur.clienteId = $('pCliente').value || null;
   cur.dataConsegna = v('pConsegna') || null;
   if (cur.stato === 'bozza') {
     delete cur.piatti;
@@ -673,11 +729,13 @@ function updateProjectPreview() {
   const D = data();
   const p = cur;
   const box = $('pResult');
+  if ($('pAlerts')) $('pAlerts').innerHTML = alertsHtml(alertsFor(p, D));
+  if ($('pGiftWho')) $('pGiftWho').textContent = p.clienteId ? `solo sui progetti di ${clientName(p.clienteId, D) || 'questo cliente'}` : 'di qualsiasi progetto (scegli un cliente per recuperarlo solo sui suoi ordini)';
   const costi = p.stato === 'bozza' ? (p.ore > 0 ? projectCosts(p, D.s, D.spoolsById, D.accById) : null) : p.costi;
   if (!costi) { box.innerHTML = '<div class="note">Inserisci pezzi, grammi e tempo di stampa per vedere costi e prezzi.</div>'; return; }
   const others = D.projects.filter((x) => x.id !== p.id);
   let recupero = p.recupero || [];
-  if (p.stato === 'bozza') recupero = p.regalo ? [] : allocateRecovery(p.pezzi, giftStatus(others));
+  if (p.stato === 'bozza') recupero = p.regalo ? [] : allocateRecovery(p.pezzi, giftStatus(others), p.clienteId);
   const recEuro = recupero.reduce((a, r) => a + r.euro, 0);
   const pi = priceInfo(costi, Number(p.pezzi), recEuro, D.s);
   const res = p.stato !== 'bozza' ? projectResult(p, D.sales, D.s, D.spoolsById, D.accById) : null;
@@ -688,7 +746,7 @@ function updateProjectPreview() {
       <div class="breakdown">Filamento ${fmt(costi.filamento)} (${nf(p.grammi, 1)} g) · Energia ${fmt(costi.energia)} · Ammortamento ${fmt(costi.ammortamento)}${costi.accessori ? ` · Accessori ${fmt(costi.accessori)}` : ''}</div>`;
     if (p.recuperoPezzi > 0) {
       const g = giftStatus(D.projects.map((x) => x.id === p.id ? { ...x, ...p } : x)).find((x) => x.id === p.id);
-      html += `<div class="line">Recupero: <b>+${fmt(costi.totale / p.recuperoPezzi)}</b> a pezzo sui prossimi <b>${nf(p.recuperoPezzi)}</b> pezzi.</div>`;
+      html += `<div class="line">Recupero: <b>+${fmt(costi.totale / p.recuperoPezzi)}</b> a pezzo sui prossimi <b>${nf(p.recuperoPezzi)}</b> pezzi${p.clienteId ? ` di <b>${esc(clientName(p.clienteId, D))}</b>` : ''}.</div>`;
       if (g) html += `<div class="line">Già recuperato su <b>${nf(g.usati)}/${nf(g.n)}</b> pezzi (${fmt(g.usati * g.perPezzo)}).</div>`;
       else html += '<div class="line">Il recupero parte quando metti il regalo in produzione.</div>';
     } else {
@@ -808,7 +866,7 @@ async function projectAction(act) {
   if (act === 'produce') {
     if (!validateProject(true)) return;
     const costi = projectCosts(cur, D.s, D.spoolsById, D.accById);
-    cur.recupero = cur.regalo ? [] : allocateRecovery(cur.pezzi, giftStatus(D.projects.filter((x) => x.id !== cur.id)));
+    cur.recupero = cur.regalo ? [] : allocateRecovery(cur.pezzi, giftStatus(D.projects.filter((x) => x.id !== cur.id)), cur.clienteId);
     cur.recuperoEuro = cur.recupero.reduce((a, r) => a + r.euro, 0);
     Object.assign(cur, { stato: 'produzione', prodottoAt: Date.now(), costi, scarti: cur.scarti || 0 });
     saveCur(); await committed('In produzione: magazzino aggiornato');
@@ -835,13 +893,45 @@ async function projectAction(act) {
     saveCur();
     const src = cur;
     cur = {
-      id: uuid(), isNew: true, stato: 'bozza', nome: src.nome, note: '', pezzi: src.pezzi, grammi: src.grammi, ore: src.ore,
+      id: uuid(), isNew: true, stato: 'bozza', nome: src.nome, note: '', clienteId: src.clienteId || null, pezzi: src.pezzi, grammi: src.grammi, ore: src.ore,
       pezziPiatto: src.pezziPiatto, grammiPiatto: src.grammiPiatto, orePiatto: src.orePiatto,
       prezzo: src.prezzo, filamenti: src.filamenti.map((a) => ({ ...a })), accessori: src.accessori.map((a) => ({ ...a })), regalo: false, recuperoPezzi: 0, scarti: 0
     };
     await committed();
     backView = 'projects'; renderProjectPage(); show('project'); $('title').textContent = 'Nuovo progetto';
     toast('Copia creata: controlla le bobine e salva');
+    return;
+  }
+  if (act === 'newOrder') {
+    const qty = Math.floor(parseNum(prompt('Quanti pezzi ti hanno ordinato?', '20')));
+    if (!(qty > 0)) return;
+    const src = cur;
+    // il regalo deve essere legato al cliente per recuperarlo sui suoi ordini
+    if (!src.clienteId) {
+      const nome = (prompt('A chi avevi fatto il regalo? (nome del cliente, facoltativo)') || '').trim();
+      if (nome) {
+        const found = D.clients.find((c) => c.nome.toLowerCase() === nome.toLowerCase());
+        src.clienteId = found ? found.id : uuid();
+        if (!found) put('clients', src.clienteId, { nome, telefono: '', note: '' });
+      }
+    }
+    const costo = src.costi?.totale || 0;
+    if (costo > 0 && !(Number(src.recuperoPezzi) > 0) &&
+        confirm(`Vuoi recuperare il costo del regalo (${fmt(costo)}) su questi ${nf(qty)} pezzi? Sarebbero +${fmt(costo / qty)} a pezzo.`)) {
+      src.recuperoPezzi = qty;
+    }
+    saveCur();
+    const k = qty / (Number(src.pezzi) || 1);
+    cur = {
+      id: uuid(), isNew: true, stato: 'bozza', nome: src.nome, note: '', clienteId: src.clienteId || null, daRegalo: src.id,
+      pezzi: qty, grammi: Math.round(src.grammi * k * 100) / 100, ore: src.ore * k,
+      pezziPiatto: src.pezziPiatto, grammiPiatto: src.grammiPiatto, orePiatto: src.orePiatto,
+      prezzo: null, filamenti: src.filamenti.map((a) => ({ ...a, grammi: Math.round(a.grammi * k * 100) / 100 })),
+      accessori: src.accessori.map((a) => ({ ...a, qta: Math.round(a.qta * k) })), regalo: false, recuperoPezzi: 0, scarti: 0
+    };
+    await committed();
+    backView = 'projects'; renderProjectPage(); show('project'); $('title').textContent = 'Nuovo ordine';
+    toast('Nuovo ordine creato: controlla bobine e prezzo, poi mettilo in produzione');
     return;
   }
   if (act === 'delete') {
@@ -884,8 +974,9 @@ function bindProjectPage() {
     }
     if (b.dataset.act) projectAction(b.dataset.act);
   });
-  const onEdit = (e) => {
+  const onEdit = async (e) => {
     if (['sPezzi', 'sPrezzo', 'sData'].includes(e.target.id)) return;
+    if (e.target.id === 'pCliente' && e.type === 'change' && e.target.value === '__new') await resolveClientSelect(e.target);
     readProjectForm();
     if (e.target.id === 'pRegalo') {
       $('pGiftBox').classList.toggle('hidden', !cur.regalo);
@@ -903,7 +994,7 @@ function bindProjectPage() {
 function spoolCard(sp, usage) {
   const rem = Math.max(0, spoolRemaining(sp, usage));
   const pct = Number(sp.peso) > 0 ? Math.max(0, Math.min(100, rem / sp.peso * 100)) : 0;
-  const low = rem < 150 && !sp.esaurita;
+  const low = rem < (Number(getSettings().sogliaBobina) || 0) && !sp.esaurita;
   return `<div class="card tap" data-spool="${esc(sp.id)}">
     <div class="row-top"><div class="name"><span class="swatch" style="background:${esc(sp.hex || '#999999')}"></span>${esc(sp.nome || 'Bobina')}</div>
       <div class="muted">${esc([sp.materiale, sp.marca].filter(Boolean).join(' · '))}</div></div>
@@ -930,7 +1021,7 @@ function accListHtml() {
     return `<div class="card tap" data-acc="${esc(a.id)}">
       <div class="row-top"><div class="name">${esc(a.nome)}</div><div class="muted">${fmt(accessoryUnitCost(a))} cad.</div></div>
       <div class="bar"><div style="width:${pct}%;background:var(--accent)"></div></div>
-      <div class="line"><b>${nf(Math.max(0, rem))}</b> disponibili su ${nf(a.quantita)} · pagati ${fmt(a.prezzo)}${rem > 0 && rem <= 3 ? ' · <b class="neg">quasi finiti</b>' : ''}</div>
+      <div class="line"><b>${nf(Math.max(0, rem))}</b> disponibili su ${nf(a.quantita)} · pagati ${fmt(a.prezzo)}${rem > 0 && rem < (Number(getSettings().sogliaAccessori) || 0) ? ' · <b class="neg">quasi finiti</b>' : ''}</div>
     </div>`;
   };
   return `<div class="card"><div class="stats">
@@ -1112,7 +1203,7 @@ function quoteCalc(q, D) {
   const pp = quoteAsProject(q);
   if (!(pp.pezzi > 0) || !(pp.grammi > 0) || !(pp.ore > 0)) return null;
   const costi = projectCosts(pp, D.s, D.spoolsById, D.accById);
-  const recEuro = allocateRecovery(pp.pezzi, giftStatus(D.projects)).reduce((a, r) => a + r.euro, 0);
+  const recEuro = allocateRecovery(pp.pezzi, giftStatus(D.projects), q.clienteId).reduce((a, r) => a + r.euro, 0);
   const pi = priceInfo(costi, pp.pezzi, recEuro, D.s);
   const scelto = q.fascia === 'custom' ? Number(q.prezzoCustom) : pi[q.fascia || 'standard'];
   return { costi, pi, scelto, totale: (scelto || 0) * pp.pezzi, pezzi: pp.pezzi };
@@ -1161,14 +1252,15 @@ function bindSwipeDelete() {
 function renderQuotes() {
   const D = data();
   const qs = $('searchProjects').value.trim().toLowerCase();
-  const rows = D.quotes.filter((q) => !qs || `${q.nome} ${q.cliente || ''}`.toLowerCase().includes(qs))
+  const qName = (q) => clientName(q.clienteId, D) || q.cliente || '';
+  const rows = D.quotes.filter((q) => !qs || `${q.nome} ${qName(q)}`.toLowerCase().includes(qs))
     .sort((a, b) => (b._updatedAt || 0) - (a._updatedAt || 0));
   $('projectsList').innerHTML = rows.length ? rows.map((q) => {
     const c = quoteCalc(q, D);
     return `<div class="card tap" data-quote="${esc(q.id)}">
       <div class="pills"><span class="pill bozza">💬 Preventivo</span>${q.convertito ? '<span class="pill completato">✓ Diventato progetto</span>' : ''}</div>
       <div class="row-top"><div class="name">${esc(q.nome)}</div><div class="muted">${dateIt(q._updatedAt)}</div></div>
-      <div class="muted">${nf(q.pezzi || 0)} pezzi${q.cliente ? ' · ' + esc(q.cliente) : ''}</div>
+      <div class="muted">${nf(q.pezzi || 0)} pezzi${qName(q) ? ' · 👤 ' + esc(qName(q)) : ''}</div>
       ${c ? `<div class="line">${FASCE[q.fascia || 'standard']}: <b>${fmt(c.scelto)}</b> a pezzo · totale <b>${fmt(c.totale)}</b> · costo ${fmt(c.pi.costoPezzo)}/pz</div>` : '<div class="line">Dati incompleti</div>'}
     </div>`;
   }).join('') + '<p class="note" style="text-align:center">Scorri un preventivo verso destra per eliminarlo.</p>' : `<div class="empty">${qs ? 'Nessun preventivo trovato.' : 'Nessun preventivo.<br>Tocca <b>+</b> per farne uno al volo, senza slicer: bastano quantità e grammi stimati.'}</div>`;
@@ -1199,7 +1291,7 @@ function renderQuotePage() {
       <label for="qNome">Cosa ti chiedono</label><input id="qNome" value="${esc(q.nome)}" placeholder="es. Portachiavi logo bar">
       <div class="row2">
         <div><label for="qPezzi">Quantità</label><input id="qPezzi" inputmode="numeric" value="${numIt(q.pezzi)}" placeholder="100"></div>
-        <div><label for="qCliente">Cliente</label><input id="qCliente" value="${esc(q.cliente || '')}" placeholder="facoltativo"></div>
+        <div><label for="qCliente">Cliente</label><select id="qCliente">${clientOptions(q.clienteId, D)}</select>${q.cliente && !q.clienteId ? `<div class="note">Prima era: ${esc(q.cliente)}</div>` : ''}</div>
       </div>
     </div>
     <div class="card">
@@ -1235,7 +1327,7 @@ function renderQuotePage() {
 function readQuoteForm() {
   const q = curQuote, D = data();
   q.nome = $('qNome').value.trim();
-  q.cliente = $('qCliente').value.trim();
+  if ($('qCliente').value !== '__new') q.clienteId = $('qCliente').value || null;
   q.pezzi = Math.floor(parseNum($('qPezzi').value)) || null;
   q.grammiPezzo = parseNum($('qGr').value);
   // Ore in decimali: 1 = 1h, 1,5 = 1h30, 0,5 = 30 minuti
@@ -1273,7 +1365,7 @@ function updateQuotePreview() {
 function quoteText(q, c) {
   const righe = [
     `Preventivo – ${q.nome}`,
-    q.cliente ? `Per: ${q.cliente}` : null,
+    (clientName(q.clienteId, data()) || q.cliente) ? `Per: ${clientName(q.clienteId, data()) || q.cliente}` : null,
     `Quantità: ${nf(c.pezzi)} pezzi`,
     `Prezzo: ${fmt(c.scelto)} cad.`,
     `Totale: ${fmt(c.totale)}`,
@@ -1318,7 +1410,7 @@ async function quoteAction(act) {
     const pp = quoteAsProject(q);
     const prezzo = Math.round((c.scelto || 0) * 100) / 100;
     const project = {
-      nome: q.nome, note: q.cliente || '', stato: 'bozza', pezzi: pp.pezzi, grammi: Math.round(pp.grammi * 100) / 100, ore: pp.ore,
+      nome: q.nome, note: q.clienteId ? '' : (q.cliente || ''), clienteId: q.clienteId || null, stato: 'bozza', pezzi: pp.pezzi, grammi: Math.round(pp.grammi * 100) / 100, ore: pp.ore,
       pezziPiatto: 1, grammiPiatto: q.grammiPezzo, orePiatto: q.minutiPezzo / 60,
       filamenti: [], accessori: pp.accessori, prezzo, regalo: false, recuperoPezzi: 0, scarti: 0, daPreventivo: q.id
     };
@@ -1340,7 +1432,8 @@ function bindQuotePage() {
     }
     if (b.dataset.qact) quoteAction(b.dataset.qact);
   });
-  const onEdit = (e) => {
+  const onEdit = async (e) => {
+    if (e.target.id === 'qCliente' && e.type === 'change' && e.target.value === '__new') await resolveClientSelect(e.target);
     if (e.target.id === 'qRif' && e.target.value) {
       const p = getRec('products', e.target.value);
       if (p && Number(p.pezzi) > 0) {
@@ -1355,6 +1448,84 @@ function bindQuotePage() {
   };
   page.addEventListener('input', onEdit);
   page.addEventListener('change', onEdit);
+}
+
+// ---------------------------------------------------------------------------
+// Clienti
+// ---------------------------------------------------------------------------
+function clientStats(c, D) {
+  const progetti = D.projects.filter((p) => p.clienteId === c.id);
+  const ids = new Set(progetti.map((p) => p.id));
+  const speso = D.sales.filter((v) => ids.has(v.projectId)).reduce((a, v) => a + v.pezzi * v.prezzo, 0);
+  const regali = progetti.filter((p) => p.regalo && p.stato !== 'bozza' && p.costi);
+  const costoRegali = regali.reduce((a, p) => a + p.costi.totale, 0);
+  const gs = giftStatus(D.projects).filter((g) => g.clienteId === c.id);
+  const recuperato = gs.reduce((a, g) => a + g.usati * g.perPezzo, 0);
+  const daRecuperare = gs.reduce((a, g) => a + g.rimanenti * g.perPezzo, 0);
+  const senzaRecupero = regali.filter((p) => !(Number(p.recuperoPezzi) > 0)).reduce((a, p) => a + p.costi.totale, 0);
+  return { progetti, ordini: progetti.filter((p) => !p.regalo).length, speso, regali, costoRegali, recuperato, daRecuperare, senzaRecupero,
+    preventivi: D.quotes.filter((q) => q.clienteId === c.id) };
+}
+
+function renderClients() {
+  const D = data();
+  const qs = $('searchProjects').value.trim().toLowerCase();
+  const rows = D.clients.filter((c) => !qs || `${c.nome} ${c.telefono || ''} ${c.note || ''}`.toLowerCase().includes(qs));
+  $('projectsList').innerHTML = rows.length ? rows.map((c) => {
+    const st = clientStats(c, D);
+    return `<div class="card tap" data-client="${esc(c.id)}">
+      <div class="row-top"><div class="name">👤 ${esc(c.nome)}</div><div class="muted">${esc(c.telefono || '')}</div></div>
+      <div class="line">${nf(st.ordini)} ordini · speso <b>${fmt(st.speso)}</b>${st.regali.length ? ` · 🎁 ${st.regali.length} regal${st.regali.length === 1 ? 'o' : 'i'}` : ''}</div>
+      ${st.daRecuperare > 0.005 ? `<div class="line">🎁 Da recuperare: <b class="neg">${fmt(st.daRecuperare)}</b></div>` : ''}
+    </div>`;
+  }).join('') : `<div class="empty">${qs ? 'Nessun cliente trovato.' : 'Nessun cliente.<br>Tocca <b>+</b> per aggiungerne uno, oppure crealo al volo dal menu "Cliente" di un progetto o di un preventivo.'}</div>`;
+}
+
+let curClient = null;
+function openClient(id) {
+  curClient = id ? { ...getRec('clients', id), isNew: false } : { id: uuid(), isNew: true, nome: '', telefono: '', note: '' };
+  const c = curClient, D = data();
+  const st = c.isNew ? null : clientStats(c, D);
+  const tel = String(c.telefono || '').replace(/[^\d+]/g, '');
+  const wa = tel.replace(/^\+/, '').replace(/^(?=3\d{8,9}$)/, '39');
+  $('clientPage').innerHTML = `
+    <div class="card">
+      <label for="kNome">Nome</label><input id="kNome" value="${esc(c.nome)}" placeholder="es. Mario Rossi, Bar Sport">
+      <label for="kTel">Telefono</label><input id="kTel" type="tel" inputmode="tel" value="${esc(c.telefono || '')}" placeholder="facoltativo">
+      <label for="kNote">Note</label><input id="kNote" value="${esc(c.note || '')}" placeholder="facoltativo">
+      ${tel ? `<div class="row2" style="margin-top:10px"><a class="btn ghost small" style="text-align:center;text-decoration:none" href="tel:${esc(tel)}">📞 Chiama</a>
+        <a class="btn ghost small" style="text-align:center;text-decoration:none" href="https://wa.me/${esc(wa)}" target="_blank" rel="noopener">💬 WhatsApp</a></div>` : ''}
+    </div>
+    ${st ? `<div class="card">
+      <div class="stats">
+        <div class="stat"><small>Ordini</small><b>${nf(st.ordini)}</b></div>
+        <div class="stat"><small>Ha speso</small><b>${fmt(st.speso)}</b></div>
+        <div class="stat"><small>🎁 Regali fatti</small><b class="neg">${fmt(st.costoRegali)}</b></div>
+        <div class="stat"><small>🎁 Recuperato</small><b class="pos">${fmt(st.recuperato)}</b></div>
+      </div>
+      ${st.daRecuperare > 0.005 ? `<div class="line">Da recuperare sui suoi prossimi ordini: <b class="neg">${fmt(st.daRecuperare)}</b></div>` : ''}
+      ${st.senzaRecupero > 0.005 ? `<div class="line">Regali senza recupero (perdita): <b>${fmt(st.senzaRecupero)}</b></div>` : ''}
+    </div>
+    ${st.progetti.length ? `<h3>Progetti</h3>${st.progetti.sort((a, b) => (b._updatedAt || 0) - (a._updatedAt || 0)).map((p) => projectCard(p, D)).join('')}` : '<p class="note">Ancora nessun progetto per questo cliente.</p>'}
+    ${st.preventivi.length ? `<h3>Preventivi</h3>${st.preventivi.map((q) => { const qc = quoteCalc(q, D); return `<div class="card tap" data-quote="${esc(q.id)}"><div class="name">💬 ${esc(q.nome)}</div><div class="line">${nf(q.pezzi || 0)} pezzi${qc ? ` · totale <b>${fmt(qc.totale)}</b>` : ''}</div></div>`; }).join('')}` : ''}` : ''}
+    <button class="btn" data-cact="save">Salva</button>
+    <button class="btn ghost" data-cact="back">Annulla</button>
+    ${c.isNew ? '' : '<button class="btn danger" data-cact="delete">Elimina cliente</button>'}`;
+  show('client');
+  $('title').textContent = c.isNew ? 'Nuovo cliente' : 'Cliente';
+}
+
+async function clientAction(act) {
+  if (act === 'back') { projTab = 'clients'; return go('projects'); }
+  if (act === 'delete') {
+    if (!confirm(`Eliminare il cliente "${curClient.nome}"? I suoi progetti restano, ma senza cliente.`)) return;
+    del('clients', curClient.id); await committed('Cliente eliminato'); projTab = 'clients'; return go('projects');
+  }
+  const nome = $('kNome').value.trim();
+  if (!nome) return toast('Scrivi il nome');
+  put('clients', curClient.id, { nome, telefono: $('kTel').value.trim(), note: $('kNote').value.trim() });
+  await committed(curClient.isNew ? 'Cliente aggiunto' : 'Salvato');
+  projTab = 'clients'; go('projects');
 }
 
 // ---------------------------------------------------------------------------
@@ -1464,7 +1635,8 @@ function renderMoney() {
 // ---------------------------------------------------------------------------
 const SETTING_FIELDS = {
   energia: 'sEnergia', consumo: 'sConsumo', bobina: 'sBobina', fallite: 'sFallite', stampante: 'sStampante',
-  oreAmm: 'sOreAmm', ricLancio: 'sRicLancio', ricStd: 'sRicStd', ricPers: 'sRicPers'
+  oreAmm: 'sOreAmm', ricLancio: 'sRicLancio', ricStd: 'sRicStd', ricPers: 'sRicPers',
+  sogliaBobina: 'sSogliaBobina', sogliaAccessori: 'sSogliaAcc'
 };
 function fillSettings(force) {
   const active = document.activeElement;
@@ -1498,10 +1670,16 @@ function bindEvents() {
   $('projectsList').addEventListener('click', (e) => {
     if (swipeJustHappened) { swipeJustHappened = false; return; }
     const q = e.target.closest('[data-quote]'); if (q) return openQuote(q.dataset.quote);
+    const cl = e.target.closest('[data-client]'); if (cl) return openClient(cl.dataset.client);
     const c = e.target.closest('[data-project]'); if (c) openProject(c.dataset.project, 'projects');
   });
   $('projSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-ptab]'); if (b) { projTab = b.dataset.ptab; renderProjects(); } });
   bindQuotePage();
+  $('clientPage').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-cact]'); if (b) return clientAction(b.dataset.cact);
+    const p = e.target.closest('[data-project]'); if (p) return openProject(p.dataset.project, 'projects');
+    const q = e.target.closest('[data-quote]'); if (q) return openQuote(q.dataset.quote);
+  });
   $('historyList').addEventListener('click', (e) => { const c = e.target.closest('[data-project]'); if (c) openProject(c.dataset.project, 'history'); });
   $('spoolsPage').addEventListener('click', (e) => {
     const t = e.target.closest('[data-tab]'); if (t) { magTab = t.dataset.tab; renderSpools(); return; }
@@ -1512,7 +1690,7 @@ function bindEvents() {
   $('spoolPage').addEventListener('click', (e) => { const b = e.target.closest('[data-sact]'); if (b) spoolAction(b.dataset.sact); });
   $('searchProjects').addEventListener('input', renderProjects);
   $('searchHistory').addEventListener('input', renderHistory);
-  $('fab').addEventListener('click', () => currentView === 'spools' ? (magTab === 'acc' ? openAcc(null) : openSpool(null)) : (projTab === 'quotes' ? openQuote(null) : openProject(null, 'projects')));
+  $('fab').addEventListener('click', () => currentView === 'spools' ? (magTab === 'acc' ? openAcc(null) : openSpool(null)) : (projTab === 'quotes' ? openQuote(null) : projTab === 'clients' ? openClient(null) : openProject(null, 'projects')));
   $('accPage').addEventListener('click', (e) => { const b = e.target.closest('[data-aact]'); if (b) accAction(b.dataset.aact); });
   $('accPage').addEventListener('input', () => { const q = parseNum($('cQta')?.value), pr = parseNum($('cPrezzo')?.value); if ($('cUnit')) $('cUnit').textContent = q > 0 && pr >= 0 ? `Costo unitario: ${fmt(pr / q)}` : ''; });
   document.querySelectorAll('nav button').forEach((b) => b.addEventListener('click', () => go(b.dataset.view)));

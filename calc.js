@@ -9,7 +9,9 @@ export const DEFAULT_SETTINGS = {
   fallite: 10,       // % stampe fallite (stima)
   ricLancio: 2.5,    // ricarico prezzo di lancio
   ricStd: 3.5,       // ricarico prezzo standard
-  ricPers: 5         // ricarico prezzo personalizzato
+  ricPers: 5,        // ricarico prezzo personalizzato
+  sogliaBobina: 100, // avviso scorte: grammi minimi da lasciare in una bobina
+  sogliaAccessori: 5 // avviso scorte: pezzi minimi da lasciare di un accessorio
 };
 
 export function parseNum(v) {
@@ -146,15 +148,19 @@ export function giftStatus(projects) {
     .map((g) => {
       const n = num(g.recuperoPezzi);
       const usati = Math.min(n, absorbed[g.id] || 0);
-      return { id: g.id, nome: g.nome, costo: g.costi.totale, n, perPezzo: g.costi.totale / n, usati, rimanenti: n - usati };
+      return { id: g.id, nome: g.nome, clienteId: g.clienteId || null, costo: g.costi.totale, n, perPezzo: g.costi.totale / n, usati, rimanenti: n - usati };
     });
 }
 
-// Distribuisce il recupero dei regali (dal più vecchio) sui pezzi di un nuovo progetto.
-export function allocateRecovery(pezzi, gifts) {
+// Distribuisce il recupero dei regali sui pezzi di un nuovo progetto.
+// Un regalo fatto a un cliente si recupera solo sui progetti di quel cliente (e ha la precedenza);
+// un regalo senza cliente si recupera su qualsiasi progetto, dal più vecchio.
+export function allocateRecovery(pezzi, gifts, clienteId = null) {
   let k = num(pezzi);
   const out = [];
-  for (const g of gifts) {
+  const eligible = gifts.filter((g) => !g.clienteId || (clienteId && g.clienteId === clienteId));
+  eligible.sort((a, b) => (b.clienteId ? 1 : 0) - (a.clienteId ? 1 : 0));
+  for (const g of eligible) {
     if (k <= 0) break;
     const t = Math.min(k, g.rimanenti);
     if (t > 0) { out.push({ giftId: g.id, pezzi: t, euro: t * g.perPezzo }); k -= t; }
@@ -279,4 +285,33 @@ export function averageSpeed(projects) {
     if (gg > 0 && oo > 0) { g += gg; h += oo; }
   }
   return h > 0 ? { gh: g / h, fromHistory: true } : { gh: DEFAULT_SPEED, fromHistory: false };
+}
+
+// Avvisi scorte: il progetto potrebbe non completarsi o lasciare il magazzino sotto la soglia.
+// In bozza il materiale non è ancora stato scalato; in produzione sì.
+export function stockAlerts(p, { spools, accessories, projects, s }) {
+  const out = [];
+  if (!p || p.stato === 'completato') return out;
+  const bozza = (p.stato || 'bozza') === 'bozza';
+  const others = projects.filter((x) => x.id !== p.id);
+  const uS = spoolUsage(others), uA = accessoryUsage(others);
+  const need = (rows, key, qty) => {
+    const m = {};
+    for (const a of rows || []) if (a[key]) m[a[key]] = (m[a[key]] || 0) + num(a[qty]);
+    return m;
+  };
+  const check = (tipo, item, rem, req, soglia) => {
+    const after = bozza ? rem - req : rem - req; // in produzione rem esclude già questo progetto
+    if (after < -0.5) out.push({ tipo, nome: item.nome, level: 'bad', rem, need: req, after, soglia, bozza });
+    else if (after < soglia) out.push({ tipo, nome: item.nome, level: 'warn', rem, need: req, after, soglia, bozza });
+  };
+  for (const [id, g] of Object.entries(need(p.filamenti, 'spoolId', 'grammi'))) {
+    const sp = spools.find((x) => x.id === id); if (!sp) continue;
+    check('bobina', sp, spoolRemaining(sp, uS), g, num(s.sogliaBobina));
+  }
+  for (const [id, q] of Object.entries(need(p.accessori, 'accId', 'qta'))) {
+    const a = accessories.find((x) => x.id === id); if (!a) continue;
+    check('accessorio', a, accessoryRemaining(a, uA), q, num(s.sogliaAccessori));
+  }
+  return out;
 }
