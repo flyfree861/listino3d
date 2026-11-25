@@ -1,20 +1,16 @@
-// ============================================================
-//  UNICO FILE DA MODIFICARE
-//  1) Incolla qui sotto la configurazione della tua app web Firebase
-//     (Console Firebase > Impostazioni progetto > Le tue app > SDK setup > Config)
-//  2) Scrivi le due email autorizzate (la tua e quella della tua compagna)
-// ============================================================
+// Configurazione del progetto Firebase "listino3d" e utenti autorizzati.
+// Questi valori non sono segreti: i dati sono protetti dalle regole in firestore.rules.
 
 export const firebaseConfig = {
-  apiKey: "INCOLLA_QUI",
-  authDomain: "INCOLLA_QUI.firebaseapp.com",
-  projectId: "INCOLLA_QUI",
-  storageBucket: "INCOLLA_QUI.appspot.com",
-  messagingSenderId: "INCOLLA_QUI",
-  appId: "INCOLLA_QUI"
+  apiKey: "AIzaSyDBWX2ThFhxLSHrw_nXA_ntU9-OgYZXloU",
+  authDomain: "listino3d.firebaseapp.com",
+  projectId: "listino3d",
+  storageBucket: "listino3d.firebasestorage.app",
+  messagingSenderId: "256995508343",
+  appId: "1:256995508343:web:ca4c9abf6dd89131dbc672"
 };
 
 export const ALLOWED_EMAILS = [
-  "tua.email@esempio.it",
-  "email.compagna@esempio.it"
+  "mazzuoccolo.fabio@gmail.com",
+  "stefaniapranzo211089@gmail.com"
 ];

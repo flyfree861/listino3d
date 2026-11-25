@@ -4,7 +4,7 @@ service cloud.firestore {
     // Solo voi due potete leggere e scrivere. Metti qui le stesse email di firebase-config.js
     function autorizzato() {
       return request.auth != null
-        && request.auth.token.email in ['tua.email@esempio.it', 'email.compagna@esempio.it'];
+        && request.auth.token.email in ['mazzuoccolo.fabio@gmail.com', 'stefaniapranzo211089@gmail.com'];
     }
     match /products/{id} {
       allow read, write: if autorizzato();
