@@ -1,5 +1,5 @@
 // Service worker: rende l'app installabile e utilizzabile anche senza internet.
-const CACHE = 'listino3d-v2';
+const CACHE = 'listino3d-v3';
 const SHELL = [
   './', './index.html', './app.js', './calc.js', './firebase-config.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'

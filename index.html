@@ -15,68 +15,106 @@
 <style>
   :root {
     --bg: #f5f6f8; --card: #ffffff; --text: #1c1f24; --muted: #6b7280;
-    --accent: #1f6feb; --accent-soft: #e8f0fe; --ok: #1a7f37; --warn: #b45309; --bad: #c62828;
+    --accent: #1f6feb; --accent-soft: #e8f0fe; --ok: #1a7f37; --ok-soft: #e6f4ea; --warn: #b45309; --warn-soft: #fef3e2;
+    --bad: #c62828; --bad-soft: #fdecea; --gift: #a21caf; --gift-soft: #fae8ff;
     --border: #e3e6ea; --radius: 14px;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg:#0f1115; --card:#1a1d23; --text:#e8eaed; --muted:#9aa0a6;
-      --accent:#5b9bff; --accent-soft:#1d2a40; --border:#2b3038; --ok:#4cc26b; --warn:#f0a43a; --bad:#ff6b6b; }
+      --accent:#5b9bff; --accent-soft:#1d2a40; --border:#2b3038; --ok:#4cc26b; --ok-soft:#173222;
+      --warn:#f0a43a; --warn-soft:#3a2a12; --bad:#ff6b6b; --bad-soft:#3a1a1a; --gift:#e879f9; --gift-soft:#3b1840; }
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin:0; background:var(--bg); color:var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size:16px; }
-  body { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+  body { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
   header { position:sticky; top:0; z-index:5; background:var(--bg);
     padding: calc(10px + env(safe-area-inset-top)) 16px 10px; display:flex; align-items:center; gap:10px;
     border-bottom:1px solid var(--border); }
   header h1 { font-size:19px; margin:0; flex:1; }
   .sync { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted);
-    background:var(--card); border:1px solid var(--border); border-radius:999px; padding:6px 10px; }
+    background:var(--card); border:1px solid var(--border); border-radius:999px; padding:6px 10px; cursor:pointer; }
   .dot { width:9px; height:9px; border-radius:50%; background:var(--muted); }
   .dot.ok { background:var(--ok); } .dot.warn { background:var(--warn); } .dot.bad { background:var(--bad); }
   main { padding:14px 14px 24px; max-width:640px; margin:0 auto; }
   .card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:14px; margin-bottom:12px; }
-  .prod { cursor:pointer; }
-  .prod-top { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
-  .prod-name { font-weight:600; font-size:17px; }
-  .prod-cost { font-size:13px; color:var(--muted); white-space:nowrap; }
+  .tap { cursor:pointer; }
+  .row-top { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .name { font-weight:600; font-size:17px; }
+  .muted { color:var(--muted); font-size:13px; }
   .prices { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-top:10px; }
   .price { background:var(--accent-soft); border-radius:10px; padding:8px 6px; text-align:center; }
   .price small { display:block; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
   .price b { font-size:17px; }
-  .mine { margin-top:8px; font-size:14px; color:var(--muted); }
-  .mine b { color:var(--text); }
+  .line { margin-top:8px; font-size:14px; color:var(--muted); }
+  .line b { color:var(--text); }
   .pos { color:var(--ok) !important; } .neg { color:var(--bad) !important; }
+  .pill { display:inline-block; font-size:12px; font-weight:600; padding:3px 9px; border-radius:999px; margin-right:4px; }
+  .pill.bozza { background:var(--accent-soft); color:var(--accent); }
+  .pill.produzione { background:var(--warn-soft); color:var(--warn); }
+  .pill.completato { background:var(--ok-soft); color:var(--ok); }
+  .pill.regalo { background:var(--gift-soft); color:var(--gift); }
+  .pills { margin-bottom:6px; }
   label { display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
-  input { width:100%; font-size:18px; padding:12px; border-radius:10px; border:1px solid var(--border);
-    background:var(--bg); color:var(--text); }
-  input:focus { outline:2px solid var(--accent); border-color:transparent; }
+  input, select, textarea { width:100%; font-size:17px; padding:11px 12px; border-radius:10px; border:1px solid var(--border);
+    background:var(--bg); color:var(--text); font-family:inherit; }
+  input:disabled, select:disabled { opacity:.6; }
+  input[type=color] { padding:4px; height:46px; }
+  input[type=checkbox] { width:22px; height:22px; margin:0; accent-color:var(--accent); }
+  input:focus, select:focus, textarea:focus { outline:2px solid var(--accent); border-color:transparent; }
   .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-  .row2 label { margin-top:10px; }
-  button { font-size:16px; border:0; border-radius:12px; padding:14px; font-weight:600; cursor:pointer; }
-  .btn { width:100%; background:var(--accent); color:#fff; margin-top:14px; }
+  .check { display:flex; align-items:center; gap:10px; font-size:16px; color:var(--text); margin:4px 0; cursor:pointer; }
+  .alloc { display:grid; grid-template-columns:1fr 92px 40px; gap:8px; align-items:center; margin-top:8px; }
+  .alloc button { padding:10px 0; background:transparent; color:var(--bad); border:1px solid var(--border); }
+  button { font-size:16px; border:0; border-radius:12px; padding:14px; font-weight:600; cursor:pointer; font-family:inherit; }
+  .btn { width:100%; background:var(--accent); color:#fff; margin-top:12px; }
+  .btn.ok { background:var(--ok); }
+  .btn.warn { background:var(--warn); }
   .btn.ghost { background:transparent; color:var(--accent); border:1px solid var(--border); }
   .btn.danger { background:transparent; color:var(--bad); border:1px solid var(--border); }
-  .fab { position:fixed; right:18px; bottom:calc(84px + env(safe-area-inset-bottom)); width:58px; height:58px;
+  .btn.small { width:auto; padding:9px 14px; font-size:14px; margin-top:8px; }
+  .fab { position:fixed; right:18px; bottom:calc(88px + env(safe-area-inset-bottom)); width:58px; height:58px;
     border-radius:50%; background:var(--accent); color:#fff; font-size:30px; line-height:1; padding:0;
-    box-shadow:0 6px 18px rgba(0,0,0,.25); }
+    box-shadow:0 6px 18px rgba(0,0,0,.25); z-index:4; }
   nav { position:fixed; bottom:0; left:0; right:0; display:flex; background:var(--card); border-top:1px solid var(--border);
     padding-bottom:env(safe-area-inset-bottom); z-index:5; }
-  nav button { flex:1; background:none; color:var(--muted); border-radius:0; padding:12px 4px; font-size:13px; font-weight:500; }
-  nav button span { display:block; font-size:21px; margin-bottom:2px; }
+  nav button { flex:1; background:none; color:var(--muted); border-radius:0; padding:10px 2px; font-size:11px; font-weight:500; }
+  nav button span { display:block; font-size:20px; margin-bottom:2px; }
   nav button.active { color:var(--accent); }
-  .result { margin-top:4px; }
-  .result .big { font-size:28px; font-weight:700; }
-  .breakdown { font-size:14px; color:var(--muted); margin-top:6px; line-height:1.6; }
-  .empty { text-align:center; color:var(--muted); padding:40px 10px; }
+  .big { font-size:28px; font-weight:700; }
+  .breakdown { font-size:14px; color:var(--muted); margin-top:8px; line-height:1.6; }
+  .empty { text-align:center; color:var(--muted); padding:40px 10px; line-height:1.5; }
   .hidden { display:none !important; }
-  .search { margin-bottom:12px; }
   .note { font-size:13px; color:var(--muted); line-height:1.5; }
   .err { color:var(--bad); font-size:14px; margin-top:10px; }
-  .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(150px + env(safe-area-inset-bottom));
+  .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(160px + env(safe-area-inset-bottom));
     background:#222; color:#fff; padding:10px 16px; border-radius:999px; font-size:14px; z-index:20; opacity:0; transition:opacity .2s; pointer-events:none; }
   .toast.show { opacity:.95; }
   h2 { font-size:17px; margin:2px 0 6px; }
+  h3 { font-size:14px; margin:18px 4px 8px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .bar { height:10px; border-radius:999px; background:var(--border); overflow:hidden; margin-top:8px; }
+  .bar > div { height:100%; border-radius:999px; }
+  .swatch { display:inline-block; width:16px; height:16px; border-radius:50%; border:1px solid var(--border); vertical-align:-2px; margin-right:6px; }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .stat { background:var(--bg); border-radius:10px; padding:10px; }
+  .stat small { display:block; color:var(--muted); font-size:12px; }
+  .stat b { font-size:18px; }
+  .hero { border-width:2px; }
+  .hero.good { border-color:var(--ok); background:var(--ok-soft); }
+  .hero.bad { border-color:var(--bad); background:var(--bad-soft); }
+  .hero.mid { border-color:var(--warn); background:var(--warn-soft); }
+  .sale { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-top:1px solid var(--border); font-size:15px; }
+  .sale button { background:none; color:var(--bad); padding:4px 8px; font-size:18px; }
+  .tbl { width:100%; border-collapse:collapse; font-size:14px; }
+  .tbl td { padding:6px 0; border-top:1px solid var(--border); }
+  .tbl td:last-child { text-align:right; font-weight:600; }
+  details summary { cursor:pointer; color:var(--muted); margin:14px 4px 8px; font-size:14px; }
+  .search { margin-bottom:12px; }
+  .seg { display:flex; background:var(--card); border:1px solid var(--border); border-radius:12px; padding:4px; margin-bottom:12px; gap:4px; }
+  .seg button { flex:1; background:none; color:var(--muted); padding:10px; font-size:15px; border-radius:9px; }
+  .seg button.active { background:var(--accent-soft); color:var(--accent); }
+  .chart-legend { display:flex; gap:14px; font-size:13px; color:var(--muted); margin-top:6px; }
+  .chart-legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; }
 </style>
 </head>
 <body>
@@ -88,10 +126,8 @@
 </header>
 
 <main>
-  <!-- Caricamento -->
   <section id="v-loading"><div class="empty">Caricamento…</div></section>
 
-  <!-- Login -->
   <section id="v-login" class="hidden">
     <div class="card">
       <h2>Accedi</h2>
@@ -105,47 +141,26 @@
     </div>
   </section>
 
-  <!-- Listino -->
-  <section id="v-list" class="hidden">
-    <input class="search" id="search" type="search" placeholder="Cerca prodotto…">
-    <div id="list"></div>
+  <section id="v-projects" class="hidden">
+    <input class="search" id="searchProjects" type="search" placeholder="Cerca progetto…">
+    <div id="projectsList"></div>
   </section>
 
-  <!-- Prodotto / calcolo -->
-  <section id="v-edit" class="hidden">
-    <div class="card">
-      <h2 id="editTitle">Nuovo prodotto</h2>
-      <label for="fNome">Nome prodotto</label>
-      <input id="fNome" type="text" placeholder="es. Medaglietta">
-      <div class="row2">
-        <div><label for="fPezzi">Pezzi per piatto</label><input id="fPezzi" inputmode="decimal" placeholder="15"></div>
-        <div><label for="fGrammi">Grammi (totale slicer)</label><input id="fGrammi" inputmode="decimal" placeholder="71,97"></div>
-      </div>
-      <div class="row2">
-        <div><label for="fOre">Ore di stampa</label><input id="fOre" inputmode="numeric" placeholder="8"></div>
-        <div><label for="fMin">Minuti</label><input id="fMin" inputmode="numeric" placeholder="20"></div>
-      </div>
-      <label for="fPrezzo">Il tuo prezzo di vendita (facoltativo)</label>
-      <input id="fPrezzo" inputmode="decimal" placeholder="1,00">
-    </div>
-
-    <div class="card result" id="resultCard">
-      <div class="note">Costo netto per pezzo</div>
-      <div class="big" id="rCosto">–</div>
-      <div class="prices">
-        <div class="price"><small>Lancio</small><b id="rLancio">–</b></div>
-        <div class="price"><small>Standard</small><b id="rStd">–</b></div>
-        <div class="price"><small>Personal.</small><b id="rPers">–</b></div>
-      </div>
-      <div class="breakdown" id="rBreak"></div>
-    </div>
-
-    <button class="btn" id="saveBtn">Salva nel listino</button>
-    <button class="btn ghost" id="cancelBtn">Annulla</button>
-    <button class="btn danger hidden" id="deleteBtn">Elimina prodotto</button>
+  <section id="v-history" class="hidden">
+    <input class="search" id="searchHistory" type="search" placeholder="Cerca nello storico…">
+    <div id="historyList"></div>
   </section>
 
-  <!-- Impostazioni -->
+  <section id="v-project" class="hidden"><div id="projectPage"></div></section>
+
+  <section id="v-spools" class="hidden"><div id="spoolsPage"></div></section>
+
+  <section id="v-spool" class="hidden"><div id="spoolPage"></div></section>
+
+  <section id="v-acc" class="hidden"><div id="accPage"></div></section>
+
+  <section id="v-money" class="hidden"><div id="moneyPage"></div></section>
+
   <section id="v-settings" class="hidden">
     <div class="card">
       <h2>Costi</h2>
@@ -154,13 +169,14 @@
         <div><label for="sConsumo">Consumo (kWh/ora)</label><input id="sConsumo" inputmode="decimal"></div>
       </div>
       <div class="row2">
-        <div><label for="sBobina">Bobina (€/kg)</label><input id="sBobina" inputmode="decimal"></div>
+        <div><label for="sBobina">Filamento (€/kg)</label><input id="sBobina" inputmode="decimal"></div>
         <div><label for="sFallite">Stampe fallite (%)</label><input id="sFallite" inputmode="decimal"></div>
       </div>
       <div class="row2">
         <div><label for="sStampante">Costo stampante (€)</label><input id="sStampante" inputmode="decimal"></div>
         <div><label for="sOreAmm">Ore ammortamento</label><input id="sOreAmm" inputmode="decimal"></div>
       </div>
+      <p class="note">Il prezzo del filamento €/kg si usa solo per i grammi non assegnati a una bobina del magazzino: per le bobine vale il loro prezzo reale.</p>
     </div>
     <div class="card">
       <h2>Ricarichi (× sul costo)</h2>
@@ -169,7 +185,7 @@
         <div><label for="sRicStd">Standard</label><input id="sRicStd" inputmode="decimal"></div>
       </div>
       <label for="sRicPers">Personalizzato</label><input id="sRicPers" inputmode="decimal">
-      <p class="note">I prezzi suggeriti sono arrotondati ai 10 centesimi. Le modifiche valgono per entrambi i telefoni.</p>
+      <p class="note">I prezzi suggeriti sono arrotondati ai 10 centesimi. Le modifiche valgono per entrambi i telefoni e non cambiano i costi dei progetti già messi in produzione.</p>
     </div>
     <button class="btn" id="saveSettingsBtn">Salva impostazioni</button>
     <div class="card" style="margin-top:16px">
@@ -181,12 +197,14 @@
   </section>
 </main>
 
-<button class="fab hidden" id="fab" aria-label="Nuovo prodotto">+</button>
+<button class="fab hidden" id="fab" aria-label="Aggiungi">+</button>
 
 <nav id="nav" class="hidden">
-  <button data-view="list" class="active"><span>📋</span>Listino</button>
-  <button data-view="calc"><span>🧮</span>Calcola</button>
-  <button data-view="settings"><span>⚙️</span>Impostazioni</button>
+  <button data-view="projects" class="active"><span>📋</span>Progetti</button>
+  <button data-view="history"><span>🗂️</span>Storico</button>
+  <button data-view="spools"><span>🧵</span>Magazzino</button>
+  <button data-view="money"><span>📈</span>Guadagni</button>
+  <button data-view="settings"><span>⚙️</span>Impostaz.</button>
 </nav>
 
 <div class="toast" id="toast"></div>

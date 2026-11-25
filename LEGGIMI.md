@@ -54,12 +54,17 @@ In alto a destra vedi lo stato: *Sincronizzato*, *N da inviare* oppure *Offline*
 ---
 
 ## Uso
-- **Listino:** tutti i prodotti, con costo netto e prezzi lancio, standard e personalizzato. Tocca un prodotto per modificarlo, il **+** per aggiungerne uno.
-- **Calcola:** inserisci i dati dello slicer (pezzi, grammi totali, ore e minuti) per un calcolo al volo. Se ti va bene, salvalo nel listino.
-- **Impostazioni:** costo dell'energia, consumo, bobina, stampante, ore di ammortamento, % di fallite e ricarichi. Sono comuni a entrambi i telefoni.
+- **Progetti:** ogni progetto passa da *Bozza* (puoi usarla anche solo come preventivo) a *In produzione* e poi a *Completato*. Quando lo metti in produzione i costi si bloccano e filamento e accessori vengono scalati dal magazzino. Quando lo completi finisce nello Storico.
+- **Bobine e accessori:** in ogni progetto scegli una o più bobine con i grammi di ciascuna, e gli accessori con la quantità totale (es. 15 tag NFC).
+- **Regali:** spunta *È un regalo*. Con 0 pezzi di recupero il costo resta una perdita; con un numero (es. 30) quel costo viene aggiunto a rate al prezzo suggerito dei prossimi 30 pezzi che metti in produzione.
+- **Scarti e vendite:** sui progetti in produzione o completati indichi i pezzi venuti male e registri le vendite (pezzi, prezzo, data).
+- **Storico:** i progetti completati, con i prezzi. Puoi registrare altre vendite, riaprirli o duplicarli come nuovo progetto.
+- **Magazzino:** le bobine (colore, peso, prezzo pagato, grammi rimasti) e gli accessori comprati all'ingrosso (costo unitario e pezzi rimasti).
+- **Guadagni:** il bilancio (incassato meno stampante, bobine, accessori ed energia, più il valore di ciò che hai in magazzino), quanto hai ripagato della stampante, il grafico per mese e i dettagli su regali, recuperi e scarti.
+- **Impostazioni:** energia, consumo, €/kg di riserva, stampante, ore di ammortamento, % di fallite e ricarichi. Valgono per entrambi i telefoni.
 
-**Formula:** costo pezzo = (filamento + energia + ammortamento) × (1 + % fallite) ÷ pezzi per piatto.
-I prezzi suggeriti sono il costo × il ricarico, arrotondati ai 10 centesimi.
+**Formula:** costo pezzo = (filamento + energia + ammortamento) × (1 + % fallite) + accessori, il tutto ÷ pezzi per piatto.
+I prezzi suggeriti sono il costo × il ricarico (+ l'eventuale quota di recupero regali), arrotondati ai 10 centesimi.
 
 ## Aggiornare l'app
 Se modifichi un file, ricaricalo su GitHub. I telefoni prendono la nuova versione alla successiva apertura con internet.
