@@ -269,3 +269,14 @@ export function remoteWins(local, remoteUpdatedAt) {
   if (!local) return true;
   return (Number(remoteUpdatedAt) || 0) > (Number(local.updated_at) || 0);
 }
+
+// Velocità media delle tue stampe (grammi all'ora) dai progetti salvati; serve a stimare il tempo nei preventivi.
+export const DEFAULT_SPEED = 10;   // g/h se non ci sono ancora progetti
+export function averageSpeed(projects) {
+  let g = 0, h = 0;
+  for (const p of projects) {
+    const gg = num(p.grammi), oo = num(p.ore);
+    if (gg > 0 && oo > 0) { g += gg; h += oo; }
+  }
+  return h > 0 ? { gh: g / h, fromHistory: true } : { gh: DEFAULT_SPEED, fromHistory: false };
+}

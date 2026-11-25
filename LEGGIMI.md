@@ -59,6 +59,7 @@ In alto a destra vedi lo stato: *Sincronizzato*, *N da inviare* oppure *Offline*
 - **Regali:** spunta *È un regalo*. Con 0 pezzi di recupero il costo resta una perdita; con un numero (es. 30) quel costo viene aggiunto a rate al prezzo suggerito dei prossimi 30 pezzi che metti in produzione.
 - **Scarti e vendite:** sui progetti in produzione o completati indichi i pezzi venuti male e registri le vendite (pezzi, prezzo, data).
 - **Data di consegna (facoltativa):** nell'elenco compare quanto manca; in rosso se è oggi o scaduta, in arancione se mancano 3 giorni o meno. I progetti con consegna più vicina stanno in cima.
+- **Preventivi** (in Progetti → 💬 Preventivi): senza slicer. Scrivi cosa ti chiedono, la quantità e i grammi a pezzo stimati, oppure scegli un progetto simile già fatto. Il tempo lo stima l'app dalla velocità media delle tue stampe. Puoi inviare il preventivo (WhatsApp, email…) e, se viene accettato, trasformarlo in progetto.
 - **Storico:** i progetti completati, con i prezzi. Puoi registrare altre vendite, riaprirli o duplicarli come nuovo progetto.
 - **Magazzino:** le bobine (colore, materiale, marca, peso, prezzo pagato, grammi rimasti; per quelle già iniziate scrivi i grammi che restano) e gli accessori comprati all'ingrosso (costo unitario e pezzi rimasti).
 - **Guadagni:** il bilancio (incassato meno stampante, bobine, accessori ed energia, più il valore di ciò che hai in magazzino), quanto hai ripagato della stampante, il grafico per mese e i dettagli su regali, recuperi e scarti.

@@ -2,7 +2,7 @@ import { firebaseConfig, ALLOWED_EMAILS } from './firebase-config.js';
 import {
   DEFAULT_SETTINGS, parseNum, projectCosts, effectiveCosts, priceInfo, spoolUsage, spoolRemaining,
   spoolEurPerGram, giftStatus, allocateRecovery, projectResult, economics, remoteWins,
-  accessoryUnitCost, accessoryUsage, accessoryRemaining
+  accessoryUnitCost, accessoryUsage, accessoryRemaining, averageSpeed
 } from './calc.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/13.4.0/firebase-app.js';
 import {
@@ -13,7 +13,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/13.4.0/firebase-firestore.js';
 
 const SQLJS_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.17.0/';
-const COLLS = ['products', 'spools', 'sales', 'accessories'];   // progetti, bobine, vendite, accessori
+const COLLS = ['products', 'spools', 'sales', 'accessories', 'quotes'];   // progetti, bobine, vendite, accessori
 const $ = (id) => document.getElementById(id);
 const eur = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
 const fmt = (n) => (n === null || n === undefined || isNaN(n)) ? '–' : eur.format(n);
@@ -157,7 +157,8 @@ function data() {
   const accessories = list('accessories');
   const accById = Object.fromEntries(accessories.map((x) => [x.id, x]));
   const accUsage = accessoryUsage(projects);
-  return { s, projects, spools, sales, spoolsById, usage, accessories, accById, accUsage };
+  const quotes = list('quotes');
+  return { s, projects, spools, sales, spoolsById, usage, accessories, accById, accUsage, quotes };
 }
 
 // ---------------------------------------------------------------------------
@@ -272,9 +273,9 @@ async function committed(msg) {
 // ---------------------------------------------------------------------------
 // Navigazione
 // ---------------------------------------------------------------------------
-const VIEWS = ['loading', 'login', 'projects', 'history', 'project', 'spools', 'spool', 'acc', 'money', 'settings'];
-const TITLES = { projects: 'Progetti', history: 'Storico', project: 'Progetto', spools: 'Magazzino bobine', spool: 'Bobina', acc: 'Accessorio', money: 'Guadagni', settings: 'Impostazioni' };
-const NAV_OF = { project: 'projects', spool: 'spools', acc: 'spools' };
+const VIEWS = ['loading', 'login', 'projects', 'history', 'project', 'quote', 'spools', 'spool', 'acc', 'money', 'settings'];
+const TITLES = { projects: 'Progetti', history: 'Storico', project: 'Progetto', quote: 'Preventivo', spools: 'Magazzino bobine', spool: 'Bobina', acc: 'Accessorio', money: 'Guadagni', settings: 'Impostazioni' };
+const NAV_OF = { quote: 'projects', project: 'projects', spool: 'spools', acc: 'spools' };
 let currentView = 'loading';
 let backView = 'projects';
 
@@ -386,7 +387,10 @@ function projectCard(p, D) {
     ${body}</div>`;
 }
 
+let projTab = 'projects';
 function renderProjects() {
+  document.querySelectorAll('#projSeg button').forEach((b) => b.classList.toggle('active', b.dataset.ptab === projTab));
+  if (projTab === 'quotes') return renderQuotes();
   const D = data();
   const q = $('searchProjects').value.trim().toLowerCase();
   const match = (p) => !q || String(p.nome).toLowerCase().includes(q) || String(p.note || '').toLowerCase().includes(q);
@@ -1089,6 +1093,228 @@ async function accAction(act) {
 }
 
 // ---------------------------------------------------------------------------
+// Preventivi rapidi (senza slicer)
+// ---------------------------------------------------------------------------
+let curQuote = null;
+
+// Dati di un preventivo convertiti nel formato progetto, per riusare gli stessi calcoli
+function quoteAsProject(q) {
+  const pezzi = Number(q.pezzi) || 0;
+  return {
+    pezzi, grammi: (Number(q.grammiPezzo) || 0) * pezzi, ore: (Number(q.minutiPezzo) || 0) * pezzi / 60,
+    filamenti: [], accessori: (q.accessori || []).map((a) => ({ accId: a.accId, qta: (Number(a.qtaPezzo) || 0) * pezzi }))
+  };
+}
+
+function quoteCalc(q, D) {
+  const pp = quoteAsProject(q);
+  if (!(pp.pezzi > 0) || !(pp.grammi > 0) || !(pp.ore > 0)) return null;
+  const costi = projectCosts(pp, D.s, D.spoolsById, D.accById);
+  const recEuro = allocateRecovery(pp.pezzi, giftStatus(D.projects)).reduce((a, r) => a + r.euro, 0);
+  const pi = priceInfo(costi, pp.pezzi, recEuro, D.s);
+  const scelto = q.fascia === 'custom' ? Number(q.prezzoCustom) : pi[q.fascia || 'standard'];
+  return { costi, pi, scelto, totale: (scelto || 0) * pp.pezzi, pezzi: pp.pezzi };
+}
+
+const FASCE = { lancio: 'Lancio', standard: 'Standard', personalizzato: 'Personalizzato', custom: 'Prezzo mio' };
+
+function renderQuotes() {
+  const D = data();
+  const qs = $('searchProjects').value.trim().toLowerCase();
+  const rows = D.quotes.filter((q) => !qs || `${q.nome} ${q.cliente || ''}`.toLowerCase().includes(qs))
+    .sort((a, b) => (b._updatedAt || 0) - (a._updatedAt || 0));
+  $('projectsList').innerHTML = rows.length ? rows.map((q) => {
+    const c = quoteCalc(q, D);
+    return `<div class="card tap" data-quote="${esc(q.id)}">
+      <div class="pills"><span class="pill bozza">💬 Preventivo</span>${q.convertito ? '<span class="pill completato">✓ Diventato progetto</span>' : ''}</div>
+      <div class="row-top"><div class="name">${esc(q.nome)}</div><div class="muted">${dateIt(q._updatedAt)}</div></div>
+      <div class="muted">${nf(q.pezzi || 0)} pezzi${q.cliente ? ' · ' + esc(q.cliente) : ''}</div>
+      ${c ? `<div class="line">${FASCE[q.fascia || 'standard']}: <b>${fmt(c.scelto)}</b> a pezzo · totale <b>${fmt(c.totale)}</b> · costo ${fmt(c.pi.costoPezzo)}/pz</div>` : '<div class="line">Dati incompleti</div>'}
+    </div>`;
+  }).join('') : `<div class="empty">${qs ? 'Nessun preventivo trovato.' : 'Nessun preventivo.<br>Tocca <b>+</b> per farne uno al volo, senza slicer: bastano quantità e grammi stimati.'}</div>`;
+}
+
+function openQuote(id) {
+  curQuote = id ? { ...getRec('quotes', id), isNew: false }
+    : { id: uuid(), isNew: true, nome: '', cliente: '', pezzi: '', grammiPezzo: '', minutiPezzo: '', tempoManuale: false, accessori: [], fascia: 'standard', prezzoCustom: null, rifId: '' };
+  curQuote.accessori = (curQuote.accessori || []).map((a) => ({ ...a }));
+  renderQuotePage();
+  show('quote');
+  $('title').textContent = curQuote.isNew ? 'Nuovo preventivo' : 'Preventivo';
+}
+
+function renderQuotePage() {
+  const D = data();
+  const q = curQuote;
+  const speed = averageSpeed(D.projects);
+  // progetti di riferimento (uno per nome, il più recente)
+  const seen = new Set();
+  const refs = D.projects.filter((p) => Number(p.pezzi) > 0 && Number(p.grammi) > 0 && Number(p.ore) > 0)
+    .sort((a, b) => (b._updatedAt || 0) - (a._updatedAt || 0))
+    .filter((p) => { const k = String(p.nome).toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+  const accOpts = (sel) => '<option value="">— scegli accessorio —</option>' + D.accessories
+    .map((a) => `<option value="${esc(a.id)}" ${a.id === sel ? 'selected' : ''}>${esc(a.nome)} · ${fmt(accessoryUnitCost(a))} cad.</option>`).join('');
+  $('quotePage').innerHTML = `
+    <div class="card">
+      <label for="qNome">Cosa ti chiedono</label><input id="qNome" value="${esc(q.nome)}" placeholder="es. Portachiavi logo bar">
+      <div class="row2">
+        <div><label for="qPezzi">Quantità</label><input id="qPezzi" inputmode="numeric" value="${numIt(q.pezzi)}" placeholder="100"></div>
+        <div><label for="qCliente">Cliente</label><input id="qCliente" value="${esc(q.cliente || '')}" placeholder="facoltativo"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Quanto pesa e quanto ci mette</h2>
+      ${refs.length ? `<label for="qRif">Simile a un progetto già fatto (facoltativo)</label>
+        <select id="qRif"><option value="">— nessuno, stimo io —</option>${refs.map((p) => `<option value="${esc(p.id)}" ${p.id === q.rifId ? 'selected' : ''}>${esc(p.nome)} · ${nf(p.grammi / p.pezzi, 1)} g/pz</option>`).join('')}</select>` : ''}
+      <div class="row2">
+        <div><label for="qGr">Grammi a pezzo (stima)</label><input id="qGr" inputmode="decimal" value="${numIt(q.grammiPezzo)}" placeholder="es. 5"></div>
+        <div><label for="qMin">Minuti a pezzo</label><input id="qMin" inputmode="decimal" value="${q.tempoManuale ? numIt(q.minutiPezzo) : ''}" placeholder="automatico"></div>
+      </div>
+      <p class="note">Se non scrivi i minuti li stimo dalla velocità media ${speed.fromHistory ? `delle tue stampe (<b>${nf(speed.gh, 1)} g/ora</b>)` : `di <b>${nf(speed.gh)} g/ora</b> (si affina quando avrai qualche progetto salvato)`}. Il filamento è calcolato a ${fmt(D.s.bobina)}/kg.</p>
+    </div>
+    <div class="card">
+      <h2>🔩 Accessori a pezzo</h2>
+      <div id="qAccs">${(q.accessori || []).map((a, i) => `<div class="alloc"><select class="qAcc" data-i="${i}">${accOpts(a.accId)}</select>
+        <input class="qAccQ" data-i="${i}" inputmode="decimal" value="${numIt(a.qtaPezzo)}" placeholder="per pz"><button class="qAccDel" data-i="${i}" aria-label="Rimuovi">✕</button></div>`).join('')}</div>
+      ${D.accessories.length ? '<button class="btn ghost small" data-qact="addAcc">+ Aggiungi accessorio</button>' : '<p class="note">Nessun accessorio in magazzino.</p>'}
+    </div>
+    <div class="card">
+      <h2>Prezzo da proporre</h2>
+      <select id="qFascia">${Object.entries(FASCE).map(([k, v]) => `<option value="${k}" ${k === (q.fascia || 'standard') ? 'selected' : ''}>${v}</option>`).join('')}</select>
+      <div id="qCustomBox" class="${q.fascia === 'custom' ? '' : 'hidden'}"><label for="qCustom">Il tuo prezzo a pezzo (€)</label><input id="qCustom" inputmode="decimal" value="${numIt(q.prezzoCustom)}"></div>
+    </div>
+    <div class="card" id="qResult"></div>
+    <button class="btn" data-qact="share">📤 Invia preventivo</button>
+    <button class="btn warn" data-qact="toProject">▶️ Accettato: crea il progetto</button>
+    <button class="btn ghost" data-qact="save">Salva</button>
+    <button class="btn ghost" data-qact="back">Annulla</button>
+    ${q.isNew ? '' : '<button class="btn danger" data-qact="delete">Elimina preventivo</button>'}`;
+  updateQuotePreview();
+}
+
+function readQuoteForm() {
+  const q = curQuote, D = data();
+  q.nome = $('qNome').value.trim();
+  q.cliente = $('qCliente').value.trim();
+  q.pezzi = Math.floor(parseNum($('qPezzi').value)) || null;
+  q.grammiPezzo = parseNum($('qGr').value);
+  const mins = parseNum($('qMin').value);
+  q.tempoManuale = !isNaN(mins) && mins > 0;
+  q.minutiPezzo = q.tempoManuale ? mins : (q.grammiPezzo > 0 ? q.grammiPezzo / averageSpeed(D.projects).gh * 60 : null);
+  q.rifId = $('qRif') ? $('qRif').value : '';
+  document.querySelectorAll('.qAcc').forEach((el) => { q.accessori[el.dataset.i].accId = el.value; });
+  document.querySelectorAll('.qAccQ').forEach((el) => { q.accessori[el.dataset.i].qtaPezzo = parseNum(el.value); });
+  q.fascia = $('qFascia').value;
+  q.prezzoCustom = parseNum($('qCustom').value);
+  if (isNaN(q.prezzoCustom)) q.prezzoCustom = null;
+  $('qCustomBox').classList.toggle('hidden', q.fascia !== 'custom');
+}
+
+function updateQuotePreview() {
+  const D = data(), q = curQuote;
+  const c = quoteCalc(q, D);
+  if (!c) { $('qResult').innerHTML = '<div class="note">Inserisci quantità e grammi a pezzo per vedere il preventivo.</div>'; return; }
+  const g = (c.scelto || 0) - c.pi.costoPezzo;
+  $('qResult').innerHTML = `
+    <div class="note">Totale preventivo (${nf(c.pezzi)} pezzi × ${fmt(c.scelto)})</div>
+    <div class="big">${fmt(c.totale)}</div>
+    <div class="prices">
+      <div class="price"><small>Lancio</small><b>${fmt(c.pi.lancio)}</b></div>
+      <div class="price"><small>Standard</small><b>${fmt(c.pi.standard)}</b></div>
+      <div class="price"><small>Personal.</small><b>${fmt(c.pi.personalizzato)}</b></div>
+    </div>
+    <div class="breakdown">Costo stimato ${fmt(c.pi.costoPezzo)} a pezzo (${fmt(c.costi.totale)} in tutto) · guadagno <b class="${g >= 0 ? 'pos' : 'neg'}">${fmt(g)}</b> a pezzo, <b class="${g >= 0 ? 'pos' : 'neg'}">${fmt(g * c.pezzi)}</b> in tutto<br>
+    Stampa stimata: ${nf(c.pezzi * q.grammiPezzo, 0)} g di filamento · ${oreIt(c.pezzi * q.minutiPezzo / 60)} di stampa${q.tempoManuale ? '' : ' (tempo stimato)'}</div>`;
+}
+
+function quoteText(q, c) {
+  const righe = [
+    `Preventivo – ${q.nome}`,
+    q.cliente ? `Per: ${q.cliente}` : null,
+    `Quantità: ${nf(c.pezzi)} pezzi`,
+    `Prezzo: ${fmt(c.scelto)} cad.`,
+    `Totale: ${fmt(c.totale)}`,
+    `Data: ${new Date().toLocaleDateString('it-IT')}`
+  ];
+  return righe.filter(Boolean).join('\n');
+}
+
+async function quoteAction(act) {
+  if (act === 'back') { projTab = 'quotes'; return go('projects'); }
+  if (act === 'addAcc') {
+    readQuoteForm(); curQuote.accessori.push({ accId: '', qtaPezzo: 1 });
+    return renderQuotePage();
+  }
+  readQuoteForm();
+  const q = curQuote, D = data();
+  if (act === 'delete') {
+    if (!confirm('Eliminare questo preventivo?')) return;
+    del('quotes', q.id); await committed('Eliminato'); projTab = 'quotes'; return go('projects');
+  }
+  if (!q.nome) return toast('Scrivi cosa ti hanno chiesto');
+  const c = quoteCalc(q, D);
+  if (!c) return toast('Inserisci quantità e grammi a pezzo');
+  if (q.fascia === 'custom' && !(q.prezzoCustom >= 0)) return toast('Inserisci il tuo prezzo');
+  for (const a of q.accessori) if (!a.accId || !(a.qtaPezzo > 0)) return toast('Completa o rimuovi le righe degli accessori');
+  const saveQ = () => { const { isNew, ...d } = q; put('quotes', q.id, d); q.isNew = false; };
+
+  if (act === 'save') { saveQ(); await committed('Preventivo salvato'); projTab = 'quotes'; return go('projects'); }
+  if (act === 'share') {
+    saveQ(); await committed();
+    const text = quoteText(q, c);
+    try {
+      if (navigator.share) await navigator.share({ title: `Preventivo – ${q.nome}`, text });
+      else { await navigator.clipboard.writeText(text); toast('Preventivo copiato: incollalo dove vuoi'); }
+    } catch (e) {
+      if (e.name !== 'AbortError') { try { await navigator.clipboard.writeText(text); toast('Preventivo copiato'); } catch { alert(text); } }
+    }
+    return;
+  }
+  if (act === 'toProject') {
+    q.convertito = true; saveQ();
+    const pp = quoteAsProject(q);
+    const prezzo = Math.round((c.scelto || 0) * 100) / 100;
+    const project = {
+      nome: q.nome, note: q.cliente || '', stato: 'bozza', pezzi: pp.pezzi, grammi: Math.round(pp.grammi * 100) / 100, ore: pp.ore,
+      pezziPiatto: 1, grammiPiatto: q.grammiPezzo, orePiatto: q.minutiPezzo / 60,
+      filamenti: [], accessori: pp.accessori, prezzo, regalo: false, recuperoPezzi: 0, scarti: 0, daPreventivo: q.id
+    };
+    const pid = uuid();
+    put('products', pid, project);
+    await committed('Progetto creato dal preventivo');
+    openProject(pid, 'projects');
+    toast('Quando hai i dati dello slicer, aggiornali e scegli le bobine');
+  }
+}
+
+function bindQuotePage() {
+  const page = $('quotePage');
+  page.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.classList.contains('qAccDel')) {
+      readQuoteForm(); curQuote.accessori.splice(Number(b.dataset.i), 1);
+      renderQuotePage(); return;
+    }
+    if (b.dataset.qact) quoteAction(b.dataset.qact);
+  });
+  const onEdit = (e) => {
+    if (e.target.id === 'qRif' && e.target.value) {
+      const p = getRec('products', e.target.value);
+      if (p && Number(p.pezzi) > 0) {
+        $('qGr').value = numIt(Math.round(p.grammi / p.pezzi * 100) / 100);
+        $('qMin').value = numIt(Math.round(p.ore / p.pezzi * 60 * 10) / 10);
+        readQuoteForm();
+        curQuote.accessori = (p.accessori || []).map((a) => ({ accId: a.accId, qtaPezzo: Math.round(a.qta / p.pezzi * 100) / 100 }));
+        return renderQuotePage();
+      }
+    }
+    readQuoteForm(); updateQuotePreview();
+  };
+  page.addEventListener('input', onEdit);
+  page.addEventListener('change', onEdit);
+}
+
+// ---------------------------------------------------------------------------
 // Guadagni
 // ---------------------------------------------------------------------------
 function chartSvg(mesi) {
@@ -1225,7 +1451,12 @@ async function saveSettings() {
 // Eventi, login, avvio
 // ---------------------------------------------------------------------------
 function bindEvents() {
-  $('projectsList').addEventListener('click', (e) => { const c = e.target.closest('[data-project]'); if (c) openProject(c.dataset.project, 'projects'); });
+  $('projectsList').addEventListener('click', (e) => {
+    const q = e.target.closest('[data-quote]'); if (q) return openQuote(q.dataset.quote);
+    const c = e.target.closest('[data-project]'); if (c) openProject(c.dataset.project, 'projects');
+  });
+  $('projSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-ptab]'); if (b) { projTab = b.dataset.ptab; renderProjects(); } });
+  bindQuotePage();
   $('historyList').addEventListener('click', (e) => { const c = e.target.closest('[data-project]'); if (c) openProject(c.dataset.project, 'history'); });
   $('spoolsPage').addEventListener('click', (e) => {
     const t = e.target.closest('[data-tab]'); if (t) { magTab = t.dataset.tab; renderSpools(); return; }
@@ -1236,7 +1467,7 @@ function bindEvents() {
   $('spoolPage').addEventListener('click', (e) => { const b = e.target.closest('[data-sact]'); if (b) spoolAction(b.dataset.sact); });
   $('searchProjects').addEventListener('input', renderProjects);
   $('searchHistory').addEventListener('input', renderHistory);
-  $('fab').addEventListener('click', () => currentView === 'spools' ? (magTab === 'acc' ? openAcc(null) : openSpool(null)) : openProject(null, 'projects'));
+  $('fab').addEventListener('click', () => currentView === 'spools' ? (magTab === 'acc' ? openAcc(null) : openSpool(null)) : (projTab === 'quotes' ? openQuote(null) : openProject(null, 'projects')));
   $('accPage').addEventListener('click', (e) => { const b = e.target.closest('[data-aact]'); if (b) accAction(b.dataset.aact); });
   $('accPage').addEventListener('input', () => { const q = parseNum($('cQta')?.value), pr = parseNum($('cPrezzo')?.value); if ($('cUnit')) $('cUnit').textContent = q > 0 && pr >= 0 ? `Costo unitario: ${fmt(pr / q)}` : ''; });
   document.querySelectorAll('nav button').forEach((b) => b.addEventListener('click', () => go(b.dataset.view)));
