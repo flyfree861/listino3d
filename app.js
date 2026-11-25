@@ -13,7 +13,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/13.4.0/firebase-firestore.js';
 
 const SQLJS_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.17.0/';
-const COLLS = ['products', 'spools', 'sales', 'accessories', 'quotes', 'clients'];   // progetti, bobine, vendite, accessori
+const COLLS = ['products', 'spools', 'sales', 'accessories', 'requests', 'clients'];   // progetti, bobine, vendite, accessori, richieste, clienti
 const $ = (id) => document.getElementById(id);
 const eur = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
 const fmt = (n) => (n === null || n === undefined || isNaN(n)) ? '–' : eur.format(n);
@@ -157,10 +157,10 @@ function data() {
   const accessories = list('accessories');
   const accById = Object.fromEntries(accessories.map((x) => [x.id, x]));
   const accUsage = accessoryUsage(projects);
-  const quotes = list('quotes');
+  const requests = list('requests');
   const clients = list('clients').sort((a, b) => String(a.nome).localeCompare(String(b.nome)));
   const clientsById = Object.fromEntries(clients.map((c) => [c.id, c]));
-  return { s, projects, spools, sales, spoolsById, usage, accessories, accById, accUsage, quotes, clients, clientsById };
+  return { s, projects, spools, sales, spoolsById, usage, accessories, accById, accUsage, requests, clients, clientsById };
 }
 
 // ---------------------------------------------------------------------------
@@ -275,9 +275,9 @@ async function committed(msg) {
 // ---------------------------------------------------------------------------
 // Navigazione
 // ---------------------------------------------------------------------------
-const VIEWS = ['loading', 'login', 'projects', 'history', 'project', 'quote', 'client', 'spools', 'spool', 'acc', 'money', 'settings'];
-const TITLES = { projects: 'Progetti', history: 'Storico', project: 'Progetto', quote: 'Preventivo', client: 'Cliente', spools: 'Magazzino bobine', spool: 'Bobina', acc: 'Accessorio', money: 'Guadagni', settings: 'Impostazioni' };
-const NAV_OF = { client: 'projects', quote: 'projects', project: 'projects', spool: 'spools', acc: 'spools' };
+const VIEWS = ['loading', 'login', 'projects', 'history', 'project', 'request', 'client', 'spools', 'spool', 'acc', 'money', 'settings'];
+const TITLES = { projects: 'Progetti', history: 'Storico', project: 'Progetto', request: 'Richiesta', client: 'Cliente', spools: 'Magazzino bobine', spool: 'Bobina', acc: 'Accessorio', money: 'Guadagni', settings: 'Impostazioni' };
+const NAV_OF = { client: 'projects', request: 'projects', project: 'projects', spool: 'spools', acc: 'spools' };
 let currentView = 'loading';
 let backView = 'projects';
 
@@ -308,8 +308,17 @@ function toast(msg) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
 }
 
+function updateBadges() {
+  const n = newRequestsCount();
+  const segBtn = document.querySelector('#projSeg [data-ptab=requests]');
+  if (segBtn) segBtn.innerHTML = `📥 Richieste${n ? ` <span class="badge">${n}</span>` : ''}`;
+  const navBtn = document.querySelector('nav [data-view=projects]');
+  if (navBtn) navBtn.innerHTML = `<span>📋</span>Progetti${n ? `<i class="nbadge">${n}</i>` : ''}`;
+}
+
 function updateStatus() {
   if (!db) return;
+  updateBadges();
   const dot = $('syncDot'), txt = $('syncText');
   const n = pendingCount();
   let cls = 'ok', label = 'Sincronizzato';
@@ -431,7 +440,7 @@ function projectCard(p, D) {
   }
   const sub = p.stato === 'completato' ? `completato il ${dateIt(p.completatoAt)}` : `costo ${pi ? fmt(res?.costoPezzoBuono ?? pi.costoPezzo) : '–'} /pz`;
   return `<div class="card tap" data-project="${esc(p.id)}">
-    <div class="pills">${statePill(p)}${deliveryPill(p)}${alPill}</div>
+    <div class="pills">${statePill(p)}${deliveryPill(p)}${alPill}${p.preventivoInviatoAt && p.stato === 'bozza' ? '<span class="pill bozza">📤 Preventivo inviato</span>' : ''}</div>
     <div class="row-top"><div class="name">${esc(p.nome)}</div><div class="muted">${sub}</div></div>
     <div class="muted">${nf(p.pezzi)} pezzi${clientName(p.clienteId, D) ? ' · 👤 ' + esc(clientName(p.clienteId, D)) : ''}${p.note ? ' · ' + esc(p.note) : ''}</div>
     ${body}</div>`;
@@ -440,7 +449,7 @@ function projectCard(p, D) {
 let projTab = 'projects';
 function renderProjects() {
   document.querySelectorAll('#projSeg button').forEach((b) => b.classList.toggle('active', b.dataset.ptab === projTab));
-  if (projTab === 'quotes') return renderQuotes();
+  if (projTab === 'requests') return renderRequests();
   if (projTab === 'clients') return renderClients();
   const D = data();
   const q = $('searchProjects').value.trim().toLowerCase();
@@ -541,7 +550,17 @@ function renderProjectPage() {
       <button class="btn danger" data-act="delete">Elimina progetto</button>`;
   }
 
+  const req = p.richiestaId ? getRec('requests', p.richiestaId) : null;
+  const reqHtml = req ? `<div class="card" style="border-color:var(--accent)">
+      <h2>📥 Dalla richiesta</h2>
+      <div class="muted">Aggiunta da ${esc(who(req.creataDa) || '—')} il ${dateIt(req.creataAt)}</div>
+      ${req.descrizione ? `<div class="line" style="color:var(--text);white-space:pre-wrap">${esc(req.descrizione)}</div>` : ''}
+      ${req.link ? `<a class="btn ghost small" style="display:inline-block;text-decoration:none" href="${esc(/^https?:\/\//i.test(req.link) ? req.link : 'https://' + req.link)}" target="_blank" rel="noopener">🔗 Apri il link</a>` : ''}
+      ${(req.foto || []).length ? `<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">${req.foto.map((f) => `<a href="${f}" target="_blank"><img src="${f}" style="width:84px;height:84px;object-fit:cover;border-radius:10px;border:1px solid var(--border)"></a>`).join('')}</div>` : ''}
+    </div>` : '';
+
   $('projectPage').innerHTML = `
+    ${reqHtml}
     <div class="card">
       <div class="pills">${statePill(p)}${deliveryPill(p)}</div>
       <label for="pNome">Nome progetto</label>
@@ -593,6 +612,7 @@ function renderProjectPage() {
 
     <div id="pAlerts"></div>
     <div class="card" id="pResult"></div>
+    ${p.regalo ? '' : '<div class="card" id="pQuote"></div>'}
 
     ${locked ? `<div class="card">
       <h2>🗑️ Pezzi scartati</h2>
@@ -684,6 +704,7 @@ function readProjectForm() {
   cur.nome = v('pNome').trim();
   cur.note = v('pNote').trim();
   if ($('pCliente') && $('pCliente').value !== '__new') cur.clienteId = $('pCliente').value || null;
+  if ($('pFascia')) cur.fasciaPreventivo = $('pFascia').value;
   cur.dataConsegna = v('pConsegna') || null;
   if (cur.stato === 'bozza') {
     delete cur.piatti;
@@ -735,7 +756,7 @@ function updateProjectPreview() {
   if ($('pAlerts')) $('pAlerts').innerHTML = alertsHtml(alertsFor(p, D));
   if ($('pGiftWho')) $('pGiftWho').textContent = p.clienteId ? `solo sui progetti di ${clientName(p.clienteId, D) || 'questo cliente'}` : 'di qualsiasi progetto (scegli un cliente per recuperarlo solo sui suoi ordini)';
   const costi = p.stato === 'bozza' ? (p.ore > 0 ? projectCosts(p, D.s, D.spoolsById, D.accById) : null) : p.costi;
-  if (!costi) { box.innerHTML = '<div class="note">Inserisci pezzi, grammi e tempo di stampa per vedere costi e prezzi.</div>'; return; }
+  if (!costi) { box.innerHTML = '<div class="note">Inserisci pezzi, grammi e tempo di stampa per vedere costi e prezzi.</div>'; renderProjectQuote(p, null, D); return; }
   const others = D.projects.filter((x) => x.id !== p.id);
   let recupero = p.recupero || [];
   if (p.stato === 'bozza') recupero = p.regalo ? [] : allocateRecovery(p.pezzi, giftStatus(others), p.clienteId);
@@ -795,7 +816,33 @@ function updateProjectPreview() {
     html += '</div>';
   }
   box.innerHTML = html;
+  renderProjectQuote(p, pi, D);
 }
+
+const FASCE = { lancio: 'Lancio', standard: 'Standard', personalizzato: 'Personalizzato', mio: 'Il tuo prezzo' };
+function projectQuotePrice(p, pi) {
+  const f = p.fasciaPreventivo || (p.prezzo ? 'mio' : 'standard');
+  return { f, prezzo: f === 'mio' ? Number(p.prezzo) || 0 : pi[f] };
+}
+function renderProjectQuote(p, pi, D) {
+  const box = $('pQuote'); if (!box) return;
+  if (!pi) { box.innerHTML = '<h2>📤 Preventivo al cliente</h2><p class="note">Inserisci i dati dello slicer per calcolare il preventivo.</p>'; box.dataset.html = ''; return; }
+  const { f, prezzo } = projectQuotePrice(p, pi);
+  const cl = p.clienteId ? D.clientsById[p.clienteId] : null;
+  const hasTel = cl && waNumber(cl.telefono).length >= 8, hasMail = cl && validEmail(cl.email);
+  const html = `<h2>📤 Preventivo al cliente</h2>
+    <label for="pFascia">Prezzo da proporre</label>
+    <select id="pFascia">${Object.entries(FASCE).filter(([k]) => k !== 'mio' || p.prezzo).map(([k, v]) => `<option value="${k}" ${k === f ? 'selected' : ''}>${v}: ${fmt(k === 'mio' ? p.prezzo : pi[k])}</option>`).join('')}</select>
+    <div class="line">Totale: <b>${fmt(prezzo * p.pezzi)}</b> per ${nf(p.pezzi)} pezzi${p.preventivoInviatoAt ? ` · <span class="pos">inviato il ${dateIt(p.preventivoInviatoAt)}</span>` : ''}</div>
+    ${hasTel ? `<button class="btn" data-act="qWa">💬 Invia su WhatsApp a ${esc(cl.nome)}</button>` : ''}
+    ${hasMail ? `<button class="btn" data-act="qMail">✉️ Invia per email a ${esc(cl.nome)}</button>` : ''}
+    <button class="btn ${hasTel || hasMail ? 'ghost' : ''}" data-act="qShare">📤 ${hasTel || hasMail ? 'Altro modo (condividi / copia)' : 'Invia preventivo'}</button>
+    ${cl && !hasTel && !hasMail ? `<p class="note">Aggiungi telefono o email a ${esc(cl.nome)} (in 👤 Clienti) per inviarglielo direttamente.</p>` : ''}
+    ${!cl ? '<p class="note">Scegli il cliente qui sopra per inviarglielo direttamente su WhatsApp o per email.</p>' : ''}`;
+  // ridisegno solo se cambia: altrimenti un tocco subito dopo aver scritto in un campo andrebbe perso
+  if (box.dataset.html !== html) { box.innerHTML = html; box.dataset.html = html; }
+}
+
 
 function validateProject(forProduction) {
   if (!cur.nome) { toast('Scrivi il nome del progetto'); return false; }
@@ -903,6 +950,31 @@ async function projectAction(act) {
     await committed();
     backView = 'projects'; renderProjectPage(); show('project'); $('title').textContent = 'Nuovo progetto';
     toast('Copia creata: controlla le bobine e salva');
+    return;
+  }
+  if (act === 'qWa' || act === 'qMail' || act === 'qShare') {
+    const costi = cur.stato === 'bozza' ? projectCosts(cur, D.s, D.spoolsById, D.accById) : cur.costi;
+    if (!costi || !(cur.pezzi > 0)) return toast('Inserisci prima i dati dello slicer');
+    if (!cur.nome) return toast('Scrivi il nome del progetto');
+    const rec = cur.stato === 'bozza' && !cur.regalo ? allocateRecovery(cur.pezzi, giftStatus(D.projects.filter((x) => x.id !== cur.id)), cur.clienteId) : (cur.recupero || []);
+    const pi = priceInfo(costi, Number(cur.pezzi), rec.reduce((a, r) => a + r.euro, 0), D.s);
+    const { prezzo } = projectQuotePrice(cur, pi);
+    const cl = cur.clienteId ? D.clientsById[cur.clienteId] : null;
+    const text = projectQuoteText(cur, prezzo, act === 'qShare' ? null : cl);
+    if (cur.stato === 'bozza' && !validateProject(false)) return;
+    cur.preventivoInviatoAt = Date.now();
+    saveCur(); await committed();
+    if (act === 'qWa') window.open(`https://wa.me/${waNumber(cl.telefono)}?text=${encodeURIComponent(text)}`, '_blank');
+    else if (act === 'qMail') location.href = `mailto:${cl.email.trim()}?subject=${encodeURIComponent('Preventivo – ' + cur.nome)}&body=${encodeURIComponent(text)}`;
+    else {
+      try {
+        if (navigator.share) await navigator.share({ title: `Preventivo – ${cur.nome}`, text });
+        else { await navigator.clipboard.writeText(text); toast('Preventivo copiato: incollalo dove vuoi'); }
+      } catch (e) {
+        if (e.name !== 'AbortError') { try { await navigator.clipboard.writeText(text); toast('Preventivo copiato'); } catch { alert(text); } }
+      }
+    }
+    updateProjectPreview();
     return;
   }
   if (act === 'newOrder') {
@@ -1189,43 +1261,25 @@ async function accAction(act) {
 }
 
 // ---------------------------------------------------------------------------
-// Preventivi rapidi (senza slicer)
+// Richieste: oggetti che qualcuno vi chiede, da guardare e trasformare in progetto
 // ---------------------------------------------------------------------------
-let curQuote = null;
+const REQ_STATI = { nuova: 'Da guardare', lavorazione: 'In lavorazione', progetto: 'Diventata progetto', scartata: 'Scartata' };
+const REQ_PILL = { nuova: 'scaduta', lavorazione: 'produzione', progetto: 'completato', scartata: 'bozza' };
+const who = (email) => String(email || '').split('@')[0].split('.')[0].replace(/^./, (c) => c.toUpperCase());
+const newRequestsCount = () => list('requests').filter((r) => (r.stato || 'nuova') === 'nuova').length;
 
-// Dati di un preventivo convertiti nel formato progetto, per riusare gli stessi calcoli
-function quoteAsProject(q) {
-  const pezzi = Number(q.pezzi) || 0;
-  return {
-    pezzi, grammi: (Number(q.grammiPezzo) || 0) * pezzi, ore: (Number(q.minutiPezzo) || 0) * pezzi / 60,
-    filamenti: [], accessori: (q.accessori || []).map((a) => ({ accId: a.accId, qta: (Number(a.qtaPezzo) || 0) * pezzi }))
-  };
-}
-
-function quoteCalc(q, D) {
-  const pp = quoteAsProject(q);
-  if (!(pp.pezzi > 0) || !(pp.grammi > 0) || !(pp.ore > 0)) return null;
-  const costi = projectCosts(pp, D.s, D.spoolsById, D.accById);
-  const recEuro = allocateRecovery(pp.pezzi, giftStatus(D.projects), q.clienteId).reduce((a, r) => a + r.euro, 0);
-  const pi = priceInfo(costi, pp.pezzi, recEuro, D.s);
-  const scelto = q.fascia === 'custom' ? Number(q.prezzoCustom) : pi[q.fascia || 'standard'];
-  return { costi, pi, scelto, totale: (scelto || 0) * pp.pezzi, pezzi: pp.pezzi };
-}
-
-const FASCE = { lancio: 'Lancio', standard: 'Standard', personalizzato: 'Personalizzato', custom: 'Prezzo mio' };
-
-// Scorri un preventivo verso destra per eliminarlo (con conferma)
+// Scorri una richiesta verso destra per eliminarla (con conferma)
 let swipeJustHappened = false;
 function bindSwipeDelete() {
-  const list = $('projectsList');
+  const lst = $('projectsList');
   let card = null, x0 = 0, y0 = 0, dx = 0, horizontal = null;
   const reset = (c) => { c.style.transition = 'transform .2s, opacity .2s'; c.style.transform = ''; c.style.opacity = ''; c.style.background = ''; };
-  list.addEventListener('touchstart', (e) => {
-    card = e.target.closest('[data-quote]'); if (!card) return;
+  lst.addEventListener('touchstart', (e) => {
+    card = e.target.closest('[data-request]'); if (!card) return;
     x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; horizontal = null;
     card.style.transition = 'none';
   }, { passive: true });
-  list.addEventListener('touchmove', (e) => {
+  lst.addEventListener('touchmove', (e) => {
     if (!card) return;
     const mx = e.touches[0].clientX - x0, my = e.touches[0].clientY - y0;
     if (horizontal === null && (Math.abs(mx) > 8 || Math.abs(my) > 8)) horizontal = Math.abs(mx) > Math.abs(my) * 1.3;
@@ -1242,237 +1296,206 @@ function bindSwipeDelete() {
     swipeJustHappened = true; setTimeout(() => { swipeJustHappened = false; }, 400);
     if (dx <= 110) return reset(c);
     c.style.transition = 'transform .2s'; c.style.transform = 'translateX(110%)';
-    const q = getRec('quotes', c.dataset.quote);
-    await new Promise((r) => setTimeout(r, 180));
-    if (q && confirm(`Sei sicuro di voler eliminare il preventivo "${q.nome}"?`)) {
-      del('quotes', q.id); await committed('Preventivo eliminato'); renderProjects();
+    const r = getRec('requests', c.dataset.request);
+    await new Promise((res) => setTimeout(res, 180));
+    if (r && confirm(`Sei sicuro di voler eliminare la richiesta "${r.titolo}"?`)) {
+      del('requests', r.id); await committed('Richiesta eliminata'); renderProjects();
     } else reset(c);
   };
-  list.addEventListener('touchend', end);
-  list.addEventListener('touchcancel', () => { if (card) { reset(card); card = null; } });
+  lst.addEventListener('touchend', end);
+  lst.addEventListener('touchcancel', () => { if (card) { reset(card); card = null; } });
 }
 
-function renderQuotes() {
+function requestCard(r, D) {
+  const stato = r.stato || 'nuova';
+  const cl = clientName(r.clienteId, D);
+  return `<div class="card tap" data-request="${esc(r.id)}">
+    <div class="pills"><span class="pill ${REQ_PILL[stato]}">${REQ_STATI[stato]}</span>${deliveryPill({ ...r, stato: stato === 'progetto' ? 'completato' : 'bozza' })}</div>
+    <div class="row-top"><div class="name">${esc(r.titolo)}</div><div class="muted">${dateIt(r.creataAt)}</div></div>
+    <div class="muted">${r.quantita ? nf(r.quantita) + ' pezzi' : 'quantità da definire'}${cl ? ' · 👤 ' + esc(cl) : ''}${r.link ? ' · 🔗' : ''}${(r.foto || []).length ? ` · 📷 ${(r.foto || []).length}` : ''}</div>
+    ${r.descrizione ? `<div class="line">${esc(String(r.descrizione).slice(0, 140))}${String(r.descrizione).length > 140 ? '…' : ''}</div>` : ''}
+    <div class="muted" style="margin-top:6px">Aggiunta da ${esc(who(r.creataDa) || '—')}${r.presaDa && stato === 'lavorazione' ? ` · in mano a ${esc(who(r.presaDa))}` : ''}</div>
+  </div>`;
+}
+
+function renderRequests() {
   const D = data();
   const qs = $('searchProjects').value.trim().toLowerCase();
-  const qName = (q) => clientName(q.clienteId, D) || q.cliente || '';
-  const rows = D.quotes.filter((q) => !qs || `${q.nome} ${qName(q)}`.toLowerCase().includes(qs))
-    .sort((a, b) => (b._updatedAt || 0) - (a._updatedAt || 0));
-  $('projectsList').innerHTML = rows.length ? rows.map((q) => {
-    const c = quoteCalc(q, D);
-    return `<div class="card tap" data-quote="${esc(q.id)}">
-      <div class="pills"><span class="pill bozza">💬 Preventivo</span>${q.convertito ? '<span class="pill completato">✓ Diventato progetto</span>' : ''}</div>
-      <div class="row-top"><div class="name">${esc(q.nome)}</div><div class="muted">${dateIt(q._updatedAt)}</div></div>
-      <div class="muted">${nf(q.pezzi || 0)} pezzi${qName(q) ? ' · 👤 ' + esc(qName(q)) : ''}</div>
-      ${c ? `<div class="line">${FASCE[q.fascia || 'standard']}: <b>${fmt(c.scelto)}</b> a pezzo · totale <b>${fmt(c.totale)}</b> · costo ${fmt(c.pi.costoPezzo)}/pz</div>` : '<div class="line">Dati incompleti</div>'}
-    </div>`;
-  }).join('') + '<p class="note" style="text-align:center">Scorri un preventivo verso destra per eliminarlo.</p>' : `<div class="empty">${qs ? 'Nessun preventivo trovato.' : 'Nessun preventivo.<br>Tocca <b>+</b> per farne uno al volo, senza slicer: bastano quantità e grammi stimati.'}</div>`;
+  const all = list('requests').filter((r) => !qs || `${r.titolo} ${r.descrizione || ''} ${clientName(r.clienteId, D)}`.toLowerCase().includes(qs));
+  const by = (st) => all.filter((r) => (r.stato || 'nuova') === st).sort((a, b) => byDelivery(a, b) || (b.creataAt || 0) - (a.creataAt || 0));
+  const nuove = by('nuova'), lav = by('lavorazione'), chiuse = [...by('progetto'), ...by('scartata')];
+  if (!all.length) {
+    $('projectsList').innerHTML = `<div class="empty">${qs ? 'Nessuna richiesta trovata.' : 'Nessuna richiesta.<br>Quando qualcuno vi chiede un oggetto, tocca <b>+</b> e scrivi cosa serve: descrizione, link, foto, cliente, quantità. Poi chi usa lo slicer lo trasforma in progetto.'}</div>`;
+    return;
+  }
+  $('projectsList').innerHTML =
+    (nuove.length ? `<h3>Da guardare</h3>${nuove.map((r) => requestCard(r, D)).join('')}` : '') +
+    (lav.length ? `<h3>In lavorazione</h3>${lav.map((r) => requestCard(r, D)).join('')}` : '') +
+    (chiuse.length ? `<details><summary>Diventate progetto o scartate (${chiuse.length})</summary>${chiuse.map((r) => requestCard(r, D)).join('')}</details>` : '') +
+    '<p class="note" style="text-align:center">Scorri una richiesta verso destra per eliminarla.</p>';
 }
 
-function openQuote(id) {
-  curQuote = id ? { ...getRec('quotes', id), isNew: false }
-    : { id: uuid(), isNew: true, nome: '', cliente: '', pezzi: '', grammiPezzo: '', minutiPezzo: '', tempoManuale: false, accessori: [], fascia: 'standard', prezzoCustom: null, rifId: '' };
-  curQuote.accessori = (curQuote.accessori || []).map((a) => ({ ...a }));
-  renderQuotePage();
-  show('quote');
-  $('title').textContent = curQuote.isNew ? 'Nuovo preventivo' : 'Preventivo';
+let curReq = null;
+function openRequest(id) {
+  curReq = id ? { ...getRec('requests', id), isNew: false }
+    : { id: uuid(), isNew: true, titolo: '', descrizione: '', link: '', clienteId: null, quantita: null, dataConsegna: null, foto: [], stato: 'nuova' };
+  curReq.foto = [...(curReq.foto || [])];
+  renderRequestPage();
+  show('request');
+  $('title').textContent = curReq.isNew ? 'Nuova richiesta' : 'Richiesta';
 }
 
-function renderQuotePage() {
-  const D = data();
-  const q = curQuote;
-  const speed = averageSpeed(D.projects);
-  // progetti di riferimento (uno per nome, il più recente)
-  const seen = new Set();
-  const refs = D.projects.filter((p) => Number(p.pezzi) > 0 && Number(p.grammi) > 0 && Number(p.ore) > 0)
-    .sort((a, b) => (b._updatedAt || 0) - (a._updatedAt || 0))
-    .filter((p) => { const k = String(p.nome).toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
-  const accOpts = (sel) => '<option value="">— scegli accessorio —</option>' + D.accessories
-    .map((a) => `<option value="${esc(a.id)}" ${a.id === sel ? 'selected' : ''}>${esc(a.nome)} · ${fmt(accessoryUnitCost(a))} cad.</option>`).join('');
-  $('quotePage').innerHTML = `
+function renderRequestPage() {
+  const r = curReq, D = data();
+  const stato = r.stato || 'nuova';
+  let actions = '';
+  if (stato === 'nuova') actions = `
+    <button class="btn warn" data-ract="toProject">▶️ Crea il progetto</button>
+    ${r.isNew ? '' : '<button class="btn ghost" data-ract="take">🛠️ La prendo in carico</button>'}
+    <button class="btn ghost" data-ract="save">Salva</button>
+    ${r.isNew ? '<button class="btn ghost" data-ract="back">Annulla</button>' : '<button class="btn danger" data-ract="discard">Scarta richiesta</button>'}`;
+  else if (stato === 'lavorazione') actions = `
+    <button class="btn warn" data-ract="toProject">▶️ Crea il progetto</button>
+    <button class="btn ghost" data-ract="save">Salva</button>
+    <button class="btn ghost" data-ract="untake">↩️ Rimetti tra "da guardare"</button>
+    <button class="btn danger" data-ract="discard">Scarta richiesta</button>`;
+  else if (stato === 'progetto') actions = `
+    <button class="btn" data-ract="openProject">📋 Apri il progetto</button>
+    <button class="btn ghost" data-ract="save">Salva</button>`;
+  else actions = `
+    <button class="btn ghost" data-ract="restore">↩️ Ripristina</button>
+    <button class="btn danger" data-ract="delete">Elimina definitivamente</button>`;
+
+  $('requestPage').innerHTML = `
     <div class="card">
-      <label for="qNome">Cosa ti chiedono</label><input id="qNome" value="${esc(q.nome)}" placeholder="es. Portachiavi logo bar">
+      ${r.isNew ? '' : `<div class="pills"><span class="pill ${REQ_PILL[stato]}">${REQ_STATI[stato]}</span></div>
+        <div class="muted">Aggiunta da ${esc(who(r.creataDa) || '—')} il ${dateIt(r.creataAt)}${r.presaDa ? ` · presa in carico da ${esc(who(r.presaDa))}` : ''}</div>`}
+      <label for="rTitolo">Cosa serve</label><input id="rTitolo" value="${esc(r.titolo)}" placeholder="es. Portachiavi con logo del bar">
+      <label for="rDesc">Descrizione</label>
+      <textarea id="rDesc" rows="4" placeholder="Misure, colori, scritte, come lo vuole…">${esc(r.descrizione || '')}</textarea>
+      <label for="rLink">Link (modello, foto, esempio)</label>
+      <input id="rLink" type="url" inputmode="url" value="${esc(r.link || '')}" placeholder="https://…">
+      ${r.link ? `<a class="btn ghost small" style="display:inline-block;text-decoration:none" href="${esc(/^https?:\/\//i.test(r.link) ? r.link : 'https://' + r.link)}" target="_blank" rel="noopener">🔗 Apri il link</a>` : ''}
+    </div>
+    <div class="card">
+      <h2>📷 Foto</h2>
+      <div id="rFoto" style="display:flex;flex-wrap:wrap;gap:8px">${r.foto.map((f, i) => `
+        <div style="position:relative"><img src="${f}" data-zoom="${i}" style="width:96px;height:96px;object-fit:cover;border-radius:10px;border:1px solid var(--border)">
+        <button data-delfoto="${i}" aria-label="Rimuovi foto" style="position:absolute;top:-6px;right:-6px;padding:2px 8px;border-radius:999px;background:var(--bad);color:#fff;font-size:13px">✕</button></div>`).join('')}</div>
+      ${r.foto.length < 3 ? `<label class="btn ghost small" style="display:inline-block;margin-top:10px">+ Aggiungi foto<input id="rFotoIn" type="file" accept="image/*" multiple hidden></label>` : ''}
+      <p class="note">Fino a 3 foto (screenshot del messaggio, foto dell'oggetto…). Vengono ridotte per occupare poco spazio.</p>
+    </div>
+    <div class="card">
+      <label for="rCliente">Cliente</label>
+      <select id="rCliente">${clientOptions(r.clienteId, D)}</select>
       <div class="row2">
-        <div><label for="qPezzi">Quantità</label><input id="qPezzi" inputmode="numeric" value="${numIt(q.pezzi)}" placeholder="100"></div>
-        <div><label for="qCliente">Cliente</label><select id="qCliente">${clientOptions(q.clienteId, D)}</select>${q.cliente && !q.clienteId ? `<div class="note">Prima era: ${esc(q.cliente)}</div>` : ''}</div>
+        <div><label for="rQta">Quantità</label><input id="rQta" inputmode="numeric" value="${numIt(r.quantita)}" placeholder="es. 20"></div>
+        <div><label for="rData">Consegna</label><input id="rData" type="date" value="${esc(r.dataConsegna || '')}"></div>
       </div>
     </div>
-    <div class="card">
-      <h2>Quanto pesa e quanto ci mette</h2>
-      ${refs.length ? `<label for="qRif">Simile a un progetto già fatto (facoltativo)</label>
-        <select id="qRif"><option value="">— nessuno, stimo io —</option>${refs.map((p) => `<option value="${esc(p.id)}" ${p.id === q.rifId ? 'selected' : ''}>${esc(p.nome)} · ${nf(p.grammi / p.pezzi, 1)} g/pz</option>`).join('')}</select>` : ''}
-      <div class="row2">
-        <div><label for="qGr">Grammi a pezzo (stima)</label><input id="qGr" inputmode="decimal" value="${numIt(q.grammiPezzo)}" placeholder="es. 5"></div>
-        <div><label for="qMin">Ore a pezzo</label><input id="qMin" inputmode="decimal" value="${q.tempoManuale ? numIt(Math.round(q.minutiPezzo / 60 * 100) / 100) : ''}" placeholder="automatico"></div>
-      </div>
-      <p class="note">Ore in decimali: 1 = 1 ora, 1,5 = 1 ora e mezza, 0,5 = 30 minuti, 0,25 = 15 minuti. <span id="qOreHint"></span><br>Se lasci vuoto le stimo dalla velocità media ${speed.fromHistory ? `delle tue stampe (<b>${nf(speed.gh, 1)} g/ora</b>)` : `di <b>${nf(speed.gh)} g/ora</b> (si affina quando avrai qualche progetto salvato)`}. Il filamento è calcolato a ${fmt(D.s.bobina)}/kg.</p>
-    </div>
-    <div class="card">
-      <h2>🔩 Accessori a pezzo</h2>
-      <div id="qAccs">${(q.accessori || []).map((a, i) => `<div class="alloc"><select class="qAcc" data-i="${i}">${accOpts(a.accId)}</select>
-        <input class="qAccQ" data-i="${i}" inputmode="decimal" value="${numIt(a.qtaPezzo)}" placeholder="per pz"><button class="qAccDel" data-i="${i}" aria-label="Rimuovi">✕</button></div>`).join('')}</div>
-      ${D.accessories.length ? '<button class="btn ghost small" data-qact="addAcc">+ Aggiungi accessorio</button>' : '<p class="note">Nessun accessorio in magazzino.</p>'}
-    </div>
-    <div class="card">
-      <h2>Prezzo da proporre</h2>
-      <select id="qFascia">${Object.entries(FASCE).map(([k, v]) => `<option value="${k}" ${k === (q.fascia || 'standard') ? 'selected' : ''}>${v}</option>`).join('')}</select>
-      <div id="qCustomBox" class="${q.fascia === 'custom' ? '' : 'hidden'}"><label for="qCustom">Il tuo prezzo a pezzo (€)</label><input id="qCustom" inputmode="decimal" value="${numIt(q.prezzoCustom)}"></div>
-    </div>
-    <div class="card" id="qResult"></div>
-    <div id="qSend"></div>
-    <button class="btn warn" data-qact="toProject">▶️ Accettato: crea il progetto</button>
-    <button class="btn ghost" data-qact="save">Salva</button>
-    <button class="btn ghost" data-qact="back">Annulla</button>
-    ${q.isNew ? '' : '<button class="btn danger" data-qact="delete">Elimina preventivo</button>'}`;
-  updateQuotePreview();
+    ${actions}`;
 }
 
-function readQuoteForm() {
-  const q = curQuote, D = data();
-  q.nome = $('qNome').value.trim();
-  if ($('qCliente').value !== '__new') q.clienteId = $('qCliente').value || null;
-  q.pezzi = Math.floor(parseNum($('qPezzi').value)) || null;
-  q.grammiPezzo = parseNum($('qGr').value);
-  // Ore in decimali: 1 = 1h, 1,5 = 1h30, 0,5 = 30 minuti
-  const oreIn = parseNum($('qMin').value);
-  const mins = oreIn * 60;
-  q.tempoManuale = !isNaN(mins) && mins > 0;
-  q.minutiPezzo = q.tempoManuale ? mins : (q.grammiPezzo > 0 ? q.grammiPezzo / averageSpeed(D.projects).gh * 60 : null);
-  q.rifId = $('qRif') ? $('qRif').value : '';
-  document.querySelectorAll('.qAcc').forEach((el) => { q.accessori[el.dataset.i].accId = el.value; });
-  document.querySelectorAll('.qAccQ').forEach((el) => { q.accessori[el.dataset.i].qtaPezzo = parseNum(el.value); });
-  q.fascia = $('qFascia').value;
-  q.prezzoCustom = parseNum($('qCustom').value);
-  if (isNaN(q.prezzoCustom)) q.prezzoCustom = null;
-  $('qCustomBox').classList.toggle('hidden', q.fascia !== 'custom');
+function readRequestForm() {
+  const r = curReq;
+  r.titolo = $('rTitolo').value.trim();
+  r.descrizione = $('rDesc').value.trim();
+  r.link = $('rLink').value.trim();
+  if ($('rCliente').value !== '__new') r.clienteId = $('rCliente').value || null;
+  const q = Math.floor(parseNum($('rQta').value));
+  r.quantita = q > 0 ? q : null;
+  r.dataConsegna = $('rData').value || null;
 }
 
-function renderQuoteSend(q, D) {
-  const box = $('qSend'); if (!box) return;
-  const c = q.clienteId ? D.clientsById[q.clienteId] : null;
-  const hasTel = c && waNumber(c.telefono).length >= 8, hasMail = c && validEmail(c.email);
-  const html = `
-    ${hasTel ? `<button class="btn" data-qact="sendWa">💬 Invia su WhatsApp a ${esc(c.nome)}</button>` : ''}
-    ${hasMail ? `<button class="btn" data-qact="sendMail">✉️ Invia per email a ${esc(c.nome)}</button>` : ''}
-    <button class="btn ${hasTel || hasMail ? 'ghost' : ''}" data-qact="share">📤 ${hasTel || hasMail ? 'Altro modo (condividi / copia)' : 'Invia preventivo'}</button>
-    ${c && !hasTel && !hasMail ? `<p class="note">Aggiungi telefono o email a ${esc(c.nome)} (in 👤 Clienti) per inviarglielo direttamente.</p>` : ''}`;
-  // ridisegno solo se cambia: altrimenti un tocco subito dopo aver scritto in un campo andrebbe perso
-  if (box.dataset.html !== html) { box.innerHTML = html; box.dataset.html = html; }
+// Riduce la foto (lato max 1000 px, JPEG) per stare comoda nel database
+function shrinkImage(file) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 1000 / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(img.src);
+      let q = 0.72, out = c.toDataURL('image/jpeg', q);
+      while (out.length > 220000 && q > 0.35) { q -= 0.1; out = c.toDataURL('image/jpeg', q); }
+      res(out);
+    };
+    img.onerror = rej;
+    img.src = URL.createObjectURL(file);
+  });
 }
 
-function updateQuotePreview() {
-  const D = data(), q = curQuote;
-  renderQuoteSend(q, D);
-  if ($('qOreHint')) $('qOreHint').textContent = q.tempoManuale ? `(= ${oreIt(q.minutiPezzo / 60)} a pezzo)` : '';
-  const c = quoteCalc(q, D);
-  if (!c) { $('qResult').innerHTML = '<div class="note">Inserisci quantità e grammi a pezzo per vedere il preventivo.</div>'; return; }
-  const g = (c.scelto || 0) - c.pi.costoPezzo;
-  $('qResult').innerHTML = `
-    <div class="note">Totale preventivo (${nf(c.pezzi)} pezzi × ${fmt(c.scelto)})</div>
-    <div class="big">${fmt(c.totale)}</div>
-    <div class="prices">
-      <div class="price"><small>Lancio</small><b>${fmt(c.pi.lancio)}</b></div>
-      <div class="price"><small>Standard</small><b>${fmt(c.pi.standard)}</b></div>
-      <div class="price"><small>Personal.</small><b>${fmt(c.pi.personalizzato)}</b></div>
-    </div>
-    <div class="breakdown">Costo stimato ${fmt(c.pi.costoPezzo)} a pezzo (${fmt(c.costi.totale)} in tutto) · guadagno <b class="${g >= 0 ? 'pos' : 'neg'}">${fmt(g)}</b> a pezzo, <b class="${g >= 0 ? 'pos' : 'neg'}">${fmt(g * c.pezzi)}</b> in tutto<br>
-    Stampa stimata: ${nf(c.pezzi * q.grammiPezzo, 0)} g di filamento · ${oreIt(c.pezzi * q.minutiPezzo / 60)} di stampa${q.tempoManuale ? '' : ' (tempo stimato)'}</div>`;
+function saveReq() {
+  const { isNew, ...d } = curReq;
+  if (isNew) { d.creataDa = currentUser?.email || ''; d.creataAt = Date.now(); curReq.creataDa = d.creataDa; curReq.creataAt = d.creataAt; }
+  put('requests', curReq.id, d);
+  curReq.isNew = false;
 }
 
-function quoteText(q, c) {
+async function requestAction(act) {
+  if (act === 'back') { projTab = 'requests'; return go('projects'); }
+  readRequestForm();
+  const r = curReq;
+  if (act === 'delete') {
+    if (!confirm('Eliminare definitivamente questa richiesta?')) return;
+    del('requests', r.id); await committed('Richiesta eliminata'); projTab = 'requests'; return go('projects');
+  }
+  if (!r.titolo) return toast('Scrivi cosa serve');
+  if (act === 'openProject') { if (r.projectId && getRec('products', r.projectId)) return openProject(r.projectId, 'projects'); return toast('Il progetto non esiste più'); }
+  if (act === 'take') { r.stato = 'lavorazione'; r.presaDa = currentUser?.email || ''; }
+  if (act === 'untake') { r.stato = 'nuova'; r.presaDa = ''; }
+  if (act === 'discard') { if (!confirm('Scartare la richiesta? La trovi comunque in fondo all\'elenco.')) return; r.stato = 'scartata'; }
+  if (act === 'restore') r.stato = 'nuova';
+  if (act === 'toProject') {
+    const pid = uuid();
+    put('products', pid, {
+      nome: r.titolo, note: r.descrizione ? String(r.descrizione).slice(0, 120) : '', clienteId: r.clienteId || null,
+      stato: 'bozza', pezzi: r.quantita || null, dataConsegna: r.dataConsegna || null, richiestaId: r.id,
+      filamenti: [], accessori: [], regalo: false, recuperoPezzi: 0, scarti: 0
+    });
+    r.stato = 'progetto'; r.projectId = pid; r.presaDa = r.presaDa || currentUser?.email || '';
+    saveReq(); await committed('Progetto creato: ora inserisci i dati dello slicer');
+    return openProject(pid, 'projects');
+  }
+  saveReq();
+  await committed({ take: 'Presa in carico', untake: 'Rimessa tra le richieste da guardare', discard: 'Richiesta scartata', restore: 'Richiesta ripristinata' }[act] || 'Richiesta salvata');
+  projTab = 'requests'; go('projects');
+}
+
+function bindRequestPage() {
+  const page = $('requestPage');
+  page.addEventListener('click', async (e) => {
+    const z = e.target.closest('[data-zoom]');
+    if (z) { const w = window.open(); if (w) w.document.write(`<img src="${curReq.foto[z.dataset.zoom]}" style="max-width:100%">`); return; }
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.delfoto !== undefined) { readRequestForm(); curReq.foto.splice(Number(b.dataset.delfoto), 1); return renderRequestPage(); }
+    if (b.dataset.ract) requestAction(b.dataset.ract);
+  });
+  page.addEventListener('change', async (e) => {
+    if (e.target.id === 'rCliente' && e.target.value === '__new') { await resolveClientSelect(e.target); return; }
+    if (e.target.id === 'rFotoIn') {
+      readRequestForm();
+      for (const f of [...e.target.files].slice(0, 3 - curReq.foto.length)) {
+        try { curReq.foto.push(await shrinkImage(f)); } catch { toast('Non riesco a leggere questa foto'); }
+      }
+      renderRequestPage();
+    }
+  });
+}
+
+// Testo del preventivo di un progetto, da mandare al cliente
+function projectQuoteText(p, prezzo, cl) {
   const righe = [
-    `Preventivo – ${q.nome}`,
-    (clientName(q.clienteId, data()) || q.cliente) ? `Per: ${clientName(q.clienteId, data()) || q.cliente}` : null,
-    `Quantità: ${nf(c.pezzi)} pezzi`,
-    `Prezzo: ${fmt(c.scelto)} cad.`,
-    `Totale: ${fmt(c.totale)}`,
+    cl ? `Ciao ${cl.nome},\necco il preventivo che mi hai chiesto:\n` : null,
+    `Preventivo – ${p.nome}`,
+    `Quantità: ${nf(p.pezzi)} pezzi`,
+    `Prezzo: ${fmt(prezzo)} cad.`,
+    `Totale: ${fmt(prezzo * p.pezzi)}`,
+    p.dataConsegna ? `Consegna prevista: ${new Date(p.dataConsegna + 'T00:00').toLocaleDateString('it-IT')}` : null,
     `Data: ${new Date().toLocaleDateString('it-IT')}`
   ];
   return righe.filter(Boolean).join('\n');
-}
-
-async function quoteAction(act) {
-  if (act === 'back') { projTab = 'quotes'; return go('projects'); }
-  if (act === 'addAcc') {
-    readQuoteForm(); curQuote.accessori.push({ accId: '', qtaPezzo: 1 });
-    return renderQuotePage();
-  }
-  readQuoteForm();
-  const q = curQuote, D = data();
-  if (act === 'delete') {
-    if (!confirm('Eliminare questo preventivo?')) return;
-    del('quotes', q.id); await committed('Eliminato'); projTab = 'quotes'; return go('projects');
-  }
-  if (!q.nome) return toast('Scrivi cosa ti hanno chiesto');
-  const c = quoteCalc(q, D);
-  if (!c) return toast('Inserisci quantità e grammi a pezzo');
-  if (q.fascia === 'custom' && !(q.prezzoCustom >= 0)) return toast('Inserisci il tuo prezzo');
-  for (const a of q.accessori) if (!a.accId || !(a.qtaPezzo > 0)) return toast('Completa o rimuovi le righe degli accessori');
-  const saveQ = () => { const { isNew, ...d } = q; put('quotes', q.id, d); q.isNew = false; };
-
-  if (act === 'save') { saveQ(); await committed('Preventivo salvato'); projTab = 'quotes'; return go('projects'); }
-  if (act === 'sendWa' || act === 'sendMail') {
-    saveQ(); await committed();
-    const cl = D.clientsById[q.clienteId];
-    const text = `Ciao ${cl.nome},\necco il preventivo che mi hai chiesto:\n\n` + quoteText(q, c);
-    if (act === 'sendWa') window.open(`https://wa.me/${waNumber(cl.telefono)}?text=${encodeURIComponent(text)}`, '_blank');
-    else location.href = `mailto:${cl.email.trim()}?subject=${encodeURIComponent('Preventivo – ' + q.nome)}&body=${encodeURIComponent(text)}`;
-    return;
-  }
-  if (act === 'share') {
-    saveQ(); await committed();
-    const text = quoteText(q, c);
-    try {
-      if (navigator.share) await navigator.share({ title: `Preventivo – ${q.nome}`, text });
-      else { await navigator.clipboard.writeText(text); toast('Preventivo copiato: incollalo dove vuoi'); }
-    } catch (e) {
-      if (e.name !== 'AbortError') { try { await navigator.clipboard.writeText(text); toast('Preventivo copiato'); } catch { alert(text); } }
-    }
-    return;
-  }
-  if (act === 'toProject') {
-    q.convertito = true; saveQ();
-    const pp = quoteAsProject(q);
-    const prezzo = Math.round((c.scelto || 0) * 100) / 100;
-    const project = {
-      nome: q.nome, note: q.clienteId ? '' : (q.cliente || ''), clienteId: q.clienteId || null, stato: 'bozza', pezzi: pp.pezzi, grammi: Math.round(pp.grammi * 100) / 100, ore: pp.ore,
-      pezziPiatto: 1, grammiPiatto: q.grammiPezzo, orePiatto: q.minutiPezzo / 60,
-      filamenti: [], accessori: pp.accessori, prezzo, regalo: false, recuperoPezzi: 0, scarti: 0, daPreventivo: q.id
-    };
-    const pid = uuid();
-    put('products', pid, project);
-    await committed('Progetto creato dal preventivo');
-    openProject(pid, 'projects');
-    toast('Quando hai i dati dello slicer, aggiornali e scegli le bobine');
-  }
-}
-
-function bindQuotePage() {
-  const page = $('quotePage');
-  page.addEventListener('click', (e) => {
-    const b = e.target.closest('button'); if (!b) return;
-    if (b.classList.contains('qAccDel')) {
-      readQuoteForm(); curQuote.accessori.splice(Number(b.dataset.i), 1);
-      renderQuotePage(); return;
-    }
-    if (b.dataset.qact) quoteAction(b.dataset.qact);
-  });
-  const onEdit = async (e) => {
-    if (e.target.id === 'qCliente' && e.type === 'change' && e.target.value === '__new') await resolveClientSelect(e.target);
-    if (e.target.id === 'qRif' && e.target.value) {
-      const p = getRec('products', e.target.value);
-      if (p && Number(p.pezzi) > 0) {
-        $('qGr').value = numIt(Math.round(p.grammi / p.pezzi * 100) / 100);
-        $('qMin').value = numIt(Math.round(p.ore / p.pezzi * 100) / 100);
-        readQuoteForm();
-        curQuote.accessori = (p.accessori || []).map((a) => ({ accId: a.accId, qtaPezzo: Math.round(a.qta / p.pezzi * 100) / 100 }));
-        return renderQuotePage();
-      }
-    }
-    readQuoteForm(); updateQuotePreview();
-  };
-  page.addEventListener('input', onEdit);
-  page.addEventListener('change', onEdit);
 }
 
 // ---------------------------------------------------------------------------
@@ -1489,7 +1512,7 @@ function clientStats(c, D) {
   const daRecuperare = gs.reduce((a, g) => a + g.rimanenti * g.perPezzo, 0);
   const senzaRecupero = regali.filter((p) => !(Number(p.recuperoPezzi) > 0)).reduce((a, p) => a + p.costi.totale, 0);
   return { progetti, ordini: progetti.filter((p) => !p.regalo).length, speso, regali, costoRegali, recuperato, daRecuperare, senzaRecupero,
-    preventivi: D.quotes.filter((q) => q.clienteId === c.id) };
+    richieste: D.requests.filter((r) => r.clienteId === c.id) };
 }
 
 function renderClients() {
@@ -1537,7 +1560,7 @@ function openClient(id) {
       ${st.senzaRecupero > 0.005 ? `<div class="line">Regali senza recupero (perdita): <b>${fmt(st.senzaRecupero)}</b></div>` : ''}
     </div>
     ${st.progetti.length ? `<h3>Progetti</h3>${st.progetti.sort((a, b) => (b._updatedAt || 0) - (a._updatedAt || 0)).map((p) => projectCard(p, D)).join('')}` : '<p class="note">Ancora nessun progetto per questo cliente.</p>'}
-    ${st.preventivi.length ? `<h3>Preventivi</h3>${st.preventivi.map((q) => { const qc = quoteCalc(q, D); return `<div class="card tap" data-quote="${esc(q.id)}"><div class="name">💬 ${esc(q.nome)}</div><div class="line">${nf(q.pezzi || 0)} pezzi${qc ? ` · totale <b>${fmt(qc.totale)}</b>` : ''}</div></div>`; }).join('')}` : ''}` : ''}
+    ${st.richieste.length ? `<h3>Richieste</h3>${st.richieste.map((r) => requestCard(r, D)).join('')}` : ''}` : ''}
     <button class="btn" data-cact="save">Salva</button>
     <button class="btn ghost" data-cact="back">Annulla</button>
     ${c.isNew ? '' : '<button class="btn danger" data-cact="delete">Elimina cliente</button>'}`;
@@ -1701,16 +1724,16 @@ function bindEvents() {
   bindSwipeDelete();
   $('projectsList').addEventListener('click', (e) => {
     if (swipeJustHappened) { swipeJustHappened = false; return; }
-    const q = e.target.closest('[data-quote]'); if (q) return openQuote(q.dataset.quote);
+    const q = e.target.closest('[data-request]'); if (q) return openRequest(q.dataset.request);
     const cl = e.target.closest('[data-client]'); if (cl) return openClient(cl.dataset.client);
     const c = e.target.closest('[data-project]'); if (c) openProject(c.dataset.project, 'projects');
   });
   $('projSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-ptab]'); if (b) { projTab = b.dataset.ptab; renderProjects(); } });
-  bindQuotePage();
+  bindRequestPage();
   $('clientPage').addEventListener('click', (e) => {
     const b = e.target.closest('[data-cact]'); if (b) return clientAction(b.dataset.cact);
     const p = e.target.closest('[data-project]'); if (p) return openProject(p.dataset.project, 'projects');
-    const q = e.target.closest('[data-quote]'); if (q) return openQuote(q.dataset.quote);
+    const q = e.target.closest('[data-request]'); if (q) return openRequest(q.dataset.request);
   });
   $('historyList').addEventListener('click', (e) => { const c = e.target.closest('[data-project]'); if (c) openProject(c.dataset.project, 'history'); });
   $('spoolsPage').addEventListener('click', (e) => {
@@ -1722,7 +1745,7 @@ function bindEvents() {
   $('spoolPage').addEventListener('click', (e) => { const b = e.target.closest('[data-sact]'); if (b) spoolAction(b.dataset.sact); });
   $('searchProjects').addEventListener('input', renderProjects);
   $('searchHistory').addEventListener('input', renderHistory);
-  $('fab').addEventListener('click', () => currentView === 'spools' ? (magTab === 'acc' ? openAcc(null) : openSpool(null)) : (projTab === 'quotes' ? openQuote(null) : projTab === 'clients' ? openClient(null) : openProject(null, 'projects')));
+  $('fab').addEventListener('click', () => currentView === 'spools' ? (magTab === 'acc' ? openAcc(null) : openSpool(null)) : (projTab === 'requests' ? openRequest(null) : projTab === 'clients' ? openClient(null) : openProject(null, 'projects')));
   $('accPage').addEventListener('click', (e) => { const b = e.target.closest('[data-aact]'); if (b) accAction(b.dataset.aact); });
   $('accPage').addEventListener('input', () => { const q = parseNum($('cQta')?.value), pr = parseNum($('cPrezzo')?.value); if ($('cUnit')) $('cUnit').textContent = q > 0 && pr >= 0 ? `Costo unitario: ${fmt(pr / q)}` : ''; });
   document.querySelectorAll('nav button').forEach((b) => b.addEventListener('click', () => go(b.dataset.view)));

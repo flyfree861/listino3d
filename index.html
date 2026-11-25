@@ -114,7 +114,10 @@
   details summary { cursor:pointer; color:var(--muted); margin:14px 4px 8px; font-size:14px; }
   .search { margin-bottom:12px; }
   #projectsList { overflow-x:hidden; }
-  .card[data-quote] { touch-action:pan-y; }
+  .card[data-request] { touch-action:pan-y; }
+  .badge { display:inline-block; min-width:20px; padding:1px 6px; border-radius:999px; background:var(--bad); color:#fff; font-size:12px; font-style:normal; }
+  nav button { position:relative; }
+  .nbadge { position:absolute; top:4px; left:calc(50% + 6px); min-width:18px; padding:1px 5px; border-radius:999px; background:var(--bad); color:#fff; font-size:11px; font-style:normal; line-height:16px; }
   .seg { display:flex; background:var(--card); border:1px solid var(--border); border-radius:12px; padding:4px; margin-bottom:12px; gap:4px; }
   .seg button { flex:1; background:none; color:var(--muted); padding:10px; font-size:15px; border-radius:9px; }
   .seg button.active { background:var(--accent-soft); color:var(--accent); }
@@ -147,7 +150,7 @@
   </section>
 
   <section id="v-projects" class="hidden">
-    <div class="seg" id="projSeg"><button data-ptab="projects" class="active">📋 Progetti</button><button data-ptab="quotes">💬 Preventivi</button><button data-ptab="clients">👤 Clienti</button></div>
+    <div class="seg" id="projSeg"><button data-ptab="projects" class="active">📋 Progetti</button><button data-ptab="requests">📥 Richieste</button><button data-ptab="clients">👤 Clienti</button></div>
     <input class="search" id="searchProjects" type="search" placeholder="Cerca…">
     <div id="projectsList"></div>
   </section>
@@ -161,7 +164,7 @@
 
   <section id="v-spools" class="hidden"><div id="spoolsPage"></div></section>
 
-  <section id="v-quote" class="hidden"><div id="quotePage"></div></section>
+  <section id="v-request" class="hidden"><div id="requestPage"></div></section>
 
   <section id="v-client" class="hidden"><div id="clientPage"></div></section>
 
