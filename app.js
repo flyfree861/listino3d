@@ -411,8 +411,28 @@ function openProject(id, fromView) {
   $('title').textContent = cur.isNew ? 'Nuovo progetto' : 'Progetto';
 }
 
+// Pallino emoji più vicino al colore della bobina (i menu a tendina del telefono non mostrano colori veri)
+function colorEmoji(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  if (!m) return '⚪';
+  const n = parseInt(m[1], 16), r = (n >> 16) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2;
+  const sat = max === min ? 0 : (l > 0.5 ? (max - min) / (2 - max - min) : (max - min) / (max + min));
+  if (sat < 0.18 || max - min < 0.08) return l > 0.5 ? '⚪' : '⚫';
+  let h = 0;
+  if (max === r) h = ((g - b) / (max - min)) % 6; else if (max === g) h = (b - r) / (max - min) + 2; else h = (r - g) / (max - min) + 4;
+  h = (h * 60 + 360) % 360;
+  if (h < 45 && l < 0.4 && max < 0.6) return '🟤';
+  if (h < 15 || h >= 330) return '🔴';
+  if (h < 45) return '🟠';
+  if (h < 70) return '🟡';
+  if (h < 165) return '🟢';
+  if (h < 255) return '🔵';
+  return '🟣';
+}
+
 function spoolLabel(sp, usage) {
-  return `${sp.nome || 'Bobina'}${sp.materiale ? ' ' + sp.materiale : ''}${sp.marca ? ' ' + sp.marca : ''} · ${nf(Math.max(0, spoolRemaining(sp, usage)))} g`;
+  return `${colorEmoji(sp.hex)} ${sp.nome || 'Bobina'}${sp.materiale ? ' ' + sp.materiale : ''}${sp.marca ? ' ' + sp.marca : ''} · ${nf(Math.max(0, spoolRemaining(sp, usage)))} g`;
 }
 
 function renderProjectPage() {
@@ -535,7 +555,8 @@ function renderAllocs() {
     (sel && !D.spoolsById[sel] ? '<option selected value="' + esc(sel) + '">(bobina eliminata)</option>' : '');
   const rows = cur.filamenti;
   $('pAllocs').innerHTML = rows.length ? rows.map((a, i) => `
-    <div class="alloc">
+    <div class="alloc sw">
+      <span class="swatch" style="background:${esc(D.spoolsById[a.spoolId]?.hex || 'transparent')};margin:0"></span>
       <select class="aSpool" data-i="${i}" ${locked ? 'disabled' : ''}>${opts(a.spoolId)}</select>
       <input class="aGr" data-i="${i}" inputmode="decimal" value="${numIt(a.grammi)}" placeholder="g" ${locked ? 'disabled' : ''}>
       ${locked ? '<span></span>' : `<button class="aDel" data-i="${i}" aria-label="Rimuovi">✕</button>`}
@@ -592,7 +613,11 @@ function readProjectForm() {
     cur.ore = cur.orePiatto === null ? null : cur.orePiatto * k;
     cur.regalo = $('pRegalo').checked;
     cur.recuperoPezzi = Math.max(0, Math.floor(parseNum(v('pRecPezzi')) || 0));
-    document.querySelectorAll('.aSpool').forEach((el) => { cur.filamenti[el.dataset.i].spoolId = el.value; });
+    document.querySelectorAll('.aSpool').forEach((el) => {
+      cur.filamenti[el.dataset.i].spoolId = el.value;
+      const sw = el.previousElementSibling, sp = getRec('spools', el.value);
+      if (sw) sw.style.background = sp?.hex || 'transparent';
+    });
     document.querySelectorAll('.aGr').forEach((el) => { cur.filamenti[el.dataset.i].grammi = parseNum(el.value); });
     document.querySelectorAll('.xAcc').forEach((el) => { cur.accessori[el.dataset.i].accId = el.value; });
     document.querySelectorAll('.xQta').forEach((el) => { cur.accessori[el.dataset.i].qta = parseNum(el.value); });
