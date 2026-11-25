@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Solo voi due potete leggere e scrivere. Metti qui le stesse email di firebase-config.js
+    function autorizzato() {
+      return request.auth != null
+        && request.auth.token.email in ['tua.email@esempio.it', 'email.compagna@esempio.it'];
+    }
+    match /products/{id} {
+      allow read, write: if autorizzato();
+    }
+    match /settings/{key} {
+      allow read, write: if autorizzato();
+    }
+  }
+}

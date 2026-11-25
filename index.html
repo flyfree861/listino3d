@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f6feb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Listino 3D">
+<title>Listino 3D</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1c1f24; --muted: #6b7280;
+    --accent: #1f6feb; --accent-soft: #e8f0fe; --ok: #1a7f37; --warn: #b45309; --bad: #c62828;
+    --border: #e3e6ea; --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f1115; --card:#1a1d23; --text:#e8eaed; --muted:#9aa0a6;
+      --accent:#5b9bff; --accent-soft:#1d2a40; --border:#2b3038; --ok:#4cc26b; --warn:#f0a43a; --bad:#ff6b6b; }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin:0; background:var(--bg); color:var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size:16px; }
+  body { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+  header { position:sticky; top:0; z-index:5; background:var(--bg);
+    padding: calc(10px + env(safe-area-inset-top)) 16px 10px; display:flex; align-items:center; gap:10px;
+    border-bottom:1px solid var(--border); }
+  header h1 { font-size:19px; margin:0; flex:1; }
+  .sync { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted);
+    background:var(--card); border:1px solid var(--border); border-radius:999px; padding:6px 10px; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--muted); }
+  .dot.ok { background:var(--ok); } .dot.warn { background:var(--warn); } .dot.bad { background:var(--bad); }
+  main { padding:14px 14px 24px; max-width:640px; margin:0 auto; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:14px; margin-bottom:12px; }
+  .prod { cursor:pointer; }
+  .prod-top { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .prod-name { font-weight:600; font-size:17px; }
+  .prod-cost { font-size:13px; color:var(--muted); white-space:nowrap; }
+  .prices { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-top:10px; }
+  .price { background:var(--accent-soft); border-radius:10px; padding:8px 6px; text-align:center; }
+  .price small { display:block; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
+  .price b { font-size:17px; }
+  .mine { margin-top:8px; font-size:14px; color:var(--muted); }
+  .mine b { color:var(--text); }
+  .pos { color:var(--ok) !important; } .neg { color:var(--bad) !important; }
+  label { display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
+  input { width:100%; font-size:18px; padding:12px; border-radius:10px; border:1px solid var(--border);
+    background:var(--bg); color:var(--text); }
+  input:focus { outline:2px solid var(--accent); border-color:transparent; }
+  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .row2 label { margin-top:10px; }
+  button { font-size:16px; border:0; border-radius:12px; padding:14px; font-weight:600; cursor:pointer; }
+  .btn { width:100%; background:var(--accent); color:#fff; margin-top:14px; }
+  .btn.ghost { background:transparent; color:var(--accent); border:1px solid var(--border); }
+  .btn.danger { background:transparent; color:var(--bad); border:1px solid var(--border); }
+  .fab { position:fixed; right:18px; bottom:calc(84px + env(safe-area-inset-bottom)); width:58px; height:58px;
+    border-radius:50%; background:var(--accent); color:#fff; font-size:30px; line-height:1; padding:0;
+    box-shadow:0 6px 18px rgba(0,0,0,.25); }
+  nav { position:fixed; bottom:0; left:0; right:0; display:flex; background:var(--card); border-top:1px solid var(--border);
+    padding-bottom:env(safe-area-inset-bottom); z-index:5; }
+  nav button { flex:1; background:none; color:var(--muted); border-radius:0; padding:12px 4px; font-size:13px; font-weight:500; }
+  nav button span { display:block; font-size:21px; margin-bottom:2px; }
+  nav button.active { color:var(--accent); }
+  .result { margin-top:4px; }
+  .result .big { font-size:28px; font-weight:700; }
+  .breakdown { font-size:14px; color:var(--muted); margin-top:6px; line-height:1.6; }
+  .empty { text-align:center; color:var(--muted); padding:40px 10px; }
+  .hidden { display:none !important; }
+  .search { margin-bottom:12px; }
+  .note { font-size:13px; color:var(--muted); line-height:1.5; }
+  .err { color:var(--bad); font-size:14px; margin-top:10px; }
+  .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(150px + env(safe-area-inset-bottom));
+    background:#222; color:#fff; padding:10px 16px; border-radius:999px; font-size:14px; z-index:20; opacity:0; transition:opacity .2s; pointer-events:none; }
+  .toast.show { opacity:.95; }
+  h2 { font-size:17px; margin:2px 0 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Listino 3D</h1>
+  <div class="sync" id="syncBtn" role="button" title="Sincronizza ora">
+    <div class="dot" id="syncDot"></div><span id="syncText">Avvio…</span>
+  </div>
+</header>
+
+<main>
+  <!-- Caricamento -->
+  <section id="v-loading"><div class="empty">Caricamento…</div></section>
+
+  <!-- Login -->
+  <section id="v-login" class="hidden">
+    <div class="card">
+      <h2>Accedi</h2>
+      <p class="note">Usa l'email e la password create nella console Firebase. L'accesso serve una volta sola per telefono.</p>
+      <label for="loginEmail">Email</label>
+      <input id="loginEmail" type="email" autocomplete="username" inputmode="email">
+      <label for="loginPass">Password</label>
+      <input id="loginPass" type="password" autocomplete="current-password">
+      <button class="btn" id="loginBtn">Entra</button>
+      <div class="err" id="loginErr"></div>
+    </div>
+  </section>
+
+  <!-- Listino -->
+  <section id="v-list" class="hidden">
+    <input class="search" id="search" type="search" placeholder="Cerca prodotto…">
+    <div id="list"></div>
+  </section>
+
+  <!-- Prodotto / calcolo -->
+  <section id="v-edit" class="hidden">
+    <div class="card">
+      <h2 id="editTitle">Nuovo prodotto</h2>
+      <label for="fNome">Nome prodotto</label>
+      <input id="fNome" type="text" placeholder="es. Medaglietta">
+      <div class="row2">
+        <div><label for="fPezzi">Pezzi per piatto</label><input id="fPezzi" inputmode="decimal" placeholder="15"></div>
+        <div><label for="fGrammi">Grammi (totale slicer)</label><input id="fGrammi" inputmode="decimal" placeholder="71,97"></div>
+      </div>
+      <div class="row2">
+        <div><label for="fOre">Ore di stampa</label><input id="fOre" inputmode="numeric" placeholder="8"></div>
+        <div><label for="fMin">Minuti</label><input id="fMin" inputmode="numeric" placeholder="20"></div>
+      </div>
+      <label for="fPrezzo">Il tuo prezzo di vendita (facoltativo)</label>
+      <input id="fPrezzo" inputmode="decimal" placeholder="1,00">
+    </div>
+
+    <div class="card result" id="resultCard">
+      <div class="note">Costo netto per pezzo</div>
+      <div class="big" id="rCosto">–</div>
+      <div class="prices">
+        <div class="price"><small>Lancio</small><b id="rLancio">–</b></div>
+        <div class="price"><small>Standard</small><b id="rStd">–</b></div>
+        <div class="price"><small>Personal.</small><b id="rPers">–</b></div>
+      </div>
+      <div class="breakdown" id="rBreak"></div>
+    </div>
+
+    <button class="btn" id="saveBtn">Salva nel listino</button>
+    <button class="btn ghost" id="cancelBtn">Annulla</button>
+    <button class="btn danger hidden" id="deleteBtn">Elimina prodotto</button>
+  </section>
+
+  <!-- Impostazioni -->
+  <section id="v-settings" class="hidden">
+    <div class="card">
+      <h2>Costi</h2>
+      <div class="row2">
+        <div><label for="sEnergia">Energia (€/kWh)</label><input id="sEnergia" inputmode="decimal"></div>
+        <div><label for="sConsumo">Consumo (kWh/ora)</label><input id="sConsumo" inputmode="decimal"></div>
+      </div>
+      <div class="row2">
+        <div><label for="sBobina">Bobina (€/kg)</label><input id="sBobina" inputmode="decimal"></div>
+        <div><label for="sFallite">Stampe fallite (%)</label><input id="sFallite" inputmode="decimal"></div>
+      </div>
+      <div class="row2">
+        <div><label for="sStampante">Costo stampante (€)</label><input id="sStampante" inputmode="decimal"></div>
+        <div><label for="sOreAmm">Ore ammortamento</label><input id="sOreAmm" inputmode="decimal"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Ricarichi (× sul costo)</h2>
+      <div class="row2">
+        <div><label for="sRicLancio">Lancio</label><input id="sRicLancio" inputmode="decimal"></div>
+        <div><label for="sRicStd">Standard</label><input id="sRicStd" inputmode="decimal"></div>
+      </div>
+      <label for="sRicPers">Personalizzato</label><input id="sRicPers" inputmode="decimal">
+      <p class="note">I prezzi suggeriti sono arrotondati ai 10 centesimi. Le modifiche valgono per entrambi i telefoni.</p>
+    </div>
+    <button class="btn" id="saveSettingsBtn">Salva impostazioni</button>
+    <div class="card" style="margin-top:16px">
+      <div class="note" id="accountInfo"></div>
+      <div class="note" id="lastSyncInfo"></div>
+      <button class="btn ghost" id="forceSyncBtn">Sincronizza ora</button>
+      <button class="btn danger" id="logoutBtn">Esci</button>
+    </div>
+  </section>
+</main>
+
+<button class="fab hidden" id="fab" aria-label="Nuovo prodotto">+</button>
+
+<nav id="nav" class="hidden">
+  <button data-view="list" class="active"><span>📋</span>Listino</button>
+  <button data-view="calc"><span>🧮</span>Calcola</button>
+  <button data-view="settings"><span>⚙️</span>Impostazioni</button>
+</nav>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.17.0/sql-wasm.js"></script>
+<script type="module" src="app.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  }
+</script>
+</body>
+</html>
