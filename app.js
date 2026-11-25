@@ -944,15 +944,17 @@ function renderSpoolPage() {
         <div><label for="bPeso">Peso iniziale (g)</label><input id="bPeso" inputmode="decimal" value="${numIt(sp.peso)}"></div>
         <div><label for="bPrezzo">Prezzo pagato (€)</label><input id="bPrezzo" inputmode="decimal" value="${numIt(sp.prezzo)}"></div>
       </div>
+      <label for="bRim">Grammi rimasti adesso</label>
+      <input id="bRim" inputmode="decimal" value="${numIt(Math.max(0, sp.isNew ? sp.peso : spoolRemaining(sp, data().usage)))}">
+      <p class="note">Se la bobina è già stata usata prima dell'app, o pesandola il residuo è diverso, scrivi quanti grammi restano. Il costo al grammo resta quello d'acquisto (<span id="bUnit">${Number(sp.peso) > 0 ? fmt(sp.prezzo / sp.peso * 1000) + '/kg' : '–'}</span>).</p>
       <label for="bData">Data acquisto</label><input id="bData" type="date" value="${esc(sp.dataAcquisto || today())}">
       ${sp.isNew ? `<label for="bQty">Quante bobine uguali aggiungi?</label><input id="bQty" inputmode="numeric" value="1">` : `
         <label class="check" style="margin-top:14px"><input type="checkbox" id="bDone" ${sp.esaurita ? 'checked' : ''}> Bobina finita / archiviata</label>`}
     </div>
     ${sp.isNew ? '' : `<div class="card">
       <h2>Consumo</h2>
-      <div class="line"><b>${nf(Math.max(0, rem))} g</b> rimasti su ${nf(sp.peso)} g</div>
+      <div class="line"><b>${nf(Math.max(0, rem))} g</b> rimasti su ${nf(sp.peso)} g${Number(sp.usatoPrima) > 0 ? ` · ${nf(sp.usatoPrima)} g usati prima dell'app o corretti a mano` : ''}</div>
       ${used.length ? `<table class="tbl" style="margin-top:8px">${used.map((p) => `<tr><td>${esc(p.nome)}</td><td>${nf(p.filamenti.filter((a) => a.spoolId === sp.id).reduce((a, x) => a + (Number(x.grammi) || 0), 0), 1)} g</td></tr>`).join('')}</table>` : '<p class="note">Ancora nessun progetto in produzione con questa bobina.</p>'}
-      <p class="note">Se pesando la bobina il residuo è diverso, correggi il "Peso iniziale".</p>
     </div>`}
     <button class="btn" data-sact="save">Salva</button>
     <button class="btn ghost" data-sact="back">Annulla</button>
@@ -971,8 +973,12 @@ async function spoolAction(act) {
   if (!nome) return toast('Scrivi il colore o un nome');
   if (!(peso > 0)) return toast('Peso non valido');
   if (!(prezzo >= 0)) return toast('Prezzo non valido');
-  const d = { nome, hex: $('bHex').value, materiale: $('bMat').value.trim(), marca: $('bMarca').value.trim(), peso, prezzo, dataAcquisto: $('bData').value || today(),
-    esaurita: $('bDone') ? $('bDone').checked : false };
+  const rim = parseNum($('bRim').value);
+  if (!isNaN(rim) && (rim < 0 || rim > peso)) return toast('I grammi rimasti devono stare tra 0 e il peso iniziale');
+  const usedInApp = curSpool.isNew ? 0 : (data().usage[curSpool.id] || 0);
+  const usatoPrima = isNaN(rim) ? (Number(curSpool.usatoPrima) || 0) : Math.max(0, peso - rim - usedInApp);
+  const d = { nome, hex: $('bHex').value, materiale: $('bMat').value.trim(), marca: $('bMarca').value.trim(), peso, prezzo, usatoPrima,
+    dataAcquisto: $('bData').value || today(), esaurita: $('bDone') ? $('bDone').checked : false };
   if (curSpool.isNew) {
     const qty = Math.max(1, Math.min(50, Math.floor(parseNum($('bQty').value) || 1)));
     for (let i = 0; i < qty; i++) put('spools', i === 0 ? curSpool.id : uuid(), d);
@@ -998,10 +1004,13 @@ function openAcc(id) {
         <div><label for="cPrezzo">Prezzo totale (€)</label><input id="cPrezzo" inputmode="decimal" value="${numIt(a.prezzo)}" placeholder="10"></div>
       </div>
       <div class="line" id="cUnit">${Number(a.quantita) > 0 ? `Costo unitario: ${fmt(accessoryUnitCost(a))}` : ''}</div>
+      <label for="cRim">Pezzi disponibili adesso</label>
+      <input id="cRim" inputmode="numeric" value="${a.isNew ? '' : numIt(Math.max(0, rem))}" placeholder="se vuoto: tutti quelli acquistati">
+      <p class="note">Se alcuni li hai già usati prima dell'app, scrivi quanti te ne restano. Il costo di ognuno resta quello d'acquisto.</p>
       <label for="cData">Data acquisto</label><input id="cData" type="date" value="${esc(a.dataAcquisto || today())}">
     </div>
     ${a.isNew ? '' : `<div class="card"><h2>Utilizzo</h2>
-      <div class="line"><b>${nf(Math.max(0, rem))}</b> disponibili su ${nf(a.quantita)}</div>
+      <div class="line"><b>${nf(Math.max(0, rem))}</b> disponibili su ${nf(a.quantita)}${Number(a.usatiPrima) > 0 ? ` · ${nf(a.usatiPrima)} usati prima dell'app o corretti a mano` : ''}</div>
       ${used.length ? `<table class="tbl" style="margin-top:8px">${used.map((p) => `<tr><td>${esc(p.nome)}</td><td>${nf(p.accessori.filter((x) => x.accId === a.id).reduce((t, x) => t + (Number(x.qta) || 0), 0))}</td></tr>`).join('')}</table>` : '<p class="note">Ancora non usato in nessun progetto in produzione.</p>'}
       <p class="note">Quando ne compri altri, aggiungi un nuovo acquisto: così il costo unitario resta quello reale di ogni lotto.</p></div>`}
     <button class="btn" data-aact="save">Salva</button>
@@ -1022,7 +1031,11 @@ async function accAction(act) {
   if (!nome) return toast('Scrivi il nome');
   if (!(quantita > 0)) return toast('Quantità non valida');
   if (!(prezzo >= 0)) return toast('Prezzo non valido');
-  put('accessories', curAcc.id, { nome, quantita, prezzo, dataAcquisto: $('cData').value || today() });
+  const rim = parseNum($('cRim').value);
+  if (!isNaN(rim) && (rim < 0 || rim > quantita)) return toast('I pezzi disponibili devono stare tra 0 e la quantità acquistata');
+  const usedInApp = curAcc.isNew ? 0 : (data().accUsage[curAcc.id] || 0);
+  const usatiPrima = isNaN(rim) ? (Number(curAcc.usatiPrima) || 0) : Math.max(0, quantita - rim - usedInApp);
+  put('accessories', curAcc.id, { nome, quantita, prezzo, usatiPrima, dataAcquisto: $('cData').value || today() });
   await committed(curAcc.isNew ? 'Accessorio aggiunto' : 'Salvato');
   go('spools');
 }
@@ -1126,7 +1139,7 @@ function renderMoney() {
         Ammortamento maturato: ${fmt(E.ammortamento)} (quota della stampante "consumata" dalle ore di stampa).
       </div>
     </div>
-    <p class="note" style="padding:0 4px">Il <b>bilancio</b> confronta i soldi incassati con quelli spesi davvero (stampante, bobine, accessori, energia) e aggiunge il valore di ciò che hai ancora in magazzino. Il <b>margine sui pezzi</b> è incassato meno filamento, energia e accessori usati, regali e scarti compresi.</p>`;
+    <p class="note" style="padding:0 4px">Il <b>bilancio</b> confronta i soldi incassati con quelli spesi davvero (stampante, bobine, accessori, energia) e aggiunge il valore di ciò che hai ancora in magazzino. Di bobine e accessori già in parte usati prima dell'app si conta solo la parte usata da quando c'è l'app. Il <b>margine sui pezzi</b> è incassato meno filamento, energia e accessori usati, regali e scarti compresi.</p>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1171,6 +1184,7 @@ function bindEvents() {
     const c = e.target.closest('[data-spool]'); if (c) return openSpool(c.dataset.spool);
     const a = e.target.closest('[data-acc]'); if (a) openAcc(a.dataset.acc);
   });
+  $('spoolPage').addEventListener('input', () => { const pe = parseNum($('bPeso')?.value), pr = parseNum($('bPrezzo')?.value); if ($('bUnit')) $('bUnit').textContent = pe > 0 && pr >= 0 ? `${fmt(pr / pe * 1000)}/kg` : '–'; });
   $('spoolPage').addEventListener('click', (e) => { const b = e.target.closest('[data-sact]'); if (b) spoolAction(b.dataset.sact); });
   $('searchProjects').addEventListener('input', renderProjects);
   $('searchHistory').addEventListener('input', renderHistory);

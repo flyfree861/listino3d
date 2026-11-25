@@ -109,8 +109,9 @@ export function spoolUsage(projects) {
   return u;
 }
 
+// Rimanente = peso acquistato - grammi usati prima dell'app - grammi usati nei progetti
 export function spoolRemaining(sp, usage) {
-  return num(sp.peso) - (usage[sp.id] || 0);
+  return num(sp.peso) - num(sp.usatoPrima) - (usage[sp.id] || 0);
 }
 
 // Accessori consumati (solo progetti messi in produzione)
@@ -124,8 +125,13 @@ export function accessoryUsage(projects) {
 }
 
 export function accessoryRemaining(acc, usage) {
-  return num(acc.quantita) - (usage[acc.id] || 0);
+  return num(acc.quantita) - num(acc.usatiPrima) - (usage[acc.id] || 0);
 }
+
+// Quota del prezzo d'acquisto che riguarda ciò che è stato usato DOPO l'inizio dell'app
+// (quello consumato prima, con le relative vendite, resta fuori dai conti).
+export const spoolTrackedCost = (sp) => num(sp.peso) > 0 ? num(sp.prezzo) * Math.max(0, num(sp.peso) - num(sp.usatoPrima)) / num(sp.peso) : 0;
+export const accessoryTrackedCost = (a) => num(a.quantita) > 0 ? num(a.prezzo) * Math.max(0, num(a.quantita) - num(a.usatiPrima)) / num(a.quantita) : 0;
 
 // Regali da recuperare: costo, quota per pezzo, pezzi già usati per il recupero e rimanenti.
 export function giftStatus(projects) {
@@ -213,7 +219,7 @@ export function economics({ projects, sales, spools, accessories = [], s, now = 
   const usage = spoolUsage(projects);
   let speseBobine = 0, valoreMagazzino = 0, grammiMagazzino = 0;
   for (const sp of spools) {
-    speseBobine += num(sp.prezzo);
+    speseBobine += spoolTrackedCost(sp);
     const rem = Math.max(0, spoolRemaining(sp, usage));
     grammiMagazzino += rem;
     valoreMagazzino += rem * (spoolEurPerGram(sp) || 0);
@@ -222,7 +228,7 @@ export function economics({ projects, sales, spools, accessories = [], s, now = 
   const accUsage = accessoryUsage(projects);
   let speseAccessori = 0, valoreAccessori = 0;
   for (const a of accessories) {
-    speseAccessori += num(a.prezzo);
+    speseAccessori += accessoryTrackedCost(a);
     valoreAccessori += Math.max(0, accessoryRemaining(a, accUsage)) * accessoryUnitCost(a);
   }
 
