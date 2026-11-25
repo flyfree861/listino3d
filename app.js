@@ -332,6 +332,26 @@ function refreshAll() {
 // ---------------------------------------------------------------------------
 // Elenchi progetti (attivi e storico)
 // ---------------------------------------------------------------------------
+// Data di consegna (facoltativa): giorni mancanti rispetto a oggi
+function daysTo(iso) {
+  const [y, m, d] = String(iso).split('-').map(Number);
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  return Math.round((new Date(y, m - 1, d) - t) / 86400000);
+}
+function deliveryPill(p) {
+  if (!p.dataConsegna) return '';
+  const data = new Date(p.dataConsegna + 'T00:00').toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+  if (p.stato === 'completato') return `<span class="pill bozza">📅 ${data}</span>`;
+  const n = daysTo(p.dataConsegna);
+  let cls = 'bozza', txt = `tra ${n} giorni`;
+  if (n < 0) { cls = 'scaduta'; txt = n === -1 ? 'scaduta ieri' : `scaduta da ${-n} giorni`; }
+  else if (n === 0) { cls = 'scaduta'; txt = 'oggi'; }
+  else if (n === 1) { cls = 'produzione'; txt = 'domani'; }
+  else if (n <= 3) cls = 'produzione';
+  return `<span class="pill ${cls}">📅 ${data} · ${txt}</span>`;
+}
+const byDelivery = (a, b) => (a.dataConsegna || '9999').localeCompare(b.dataConsegna || '9999');
+
 const statePill = (p) => `<span class="pill ${p.stato}">${STATI[p.stato]}</span>${p.regalo ? '<span class="pill regalo">🎁 Regalo</span>' : ''}`;
 
 function projectCard(p, D) {
@@ -360,7 +380,7 @@ function projectCard(p, D) {
   }
   const sub = p.stato === 'completato' ? `completato il ${dateIt(p.completatoAt)}` : `costo ${pi ? fmt(res?.costoPezzoBuono ?? pi.costoPezzo) : '–'} /pz`;
   return `<div class="card tap" data-project="${esc(p.id)}">
-    <div class="pills">${statePill(p)}</div>
+    <div class="pills">${statePill(p)}${deliveryPill(p)}</div>
     <div class="row-top"><div class="name">${esc(p.nome)}</div><div class="muted">${sub}</div></div>
     <div class="muted">${nf(p.pezzi)} pezzi${p.note ? ' · ' + esc(p.note) : ''}</div>
     ${body}</div>`;
@@ -370,8 +390,8 @@ function renderProjects() {
   const D = data();
   const q = $('searchProjects').value.trim().toLowerCase();
   const match = (p) => !q || String(p.nome).toLowerCase().includes(q) || String(p.note || '').toLowerCase().includes(q);
-  const prod = D.projects.filter((p) => p.stato === 'produzione' && match(p)).sort((a, b) => (b.prodottoAt || 0) - (a.prodottoAt || 0));
-  const bozze = D.projects.filter((p) => p.stato === 'bozza' && match(p)).sort((a, b) => String(a.nome).localeCompare(String(b.nome)));
+  const prod = D.projects.filter((p) => p.stato === 'produzione' && match(p)).sort((a, b) => byDelivery(a, b) || (b.prodottoAt || 0) - (a.prodottoAt || 0));
+  const bozze = D.projects.filter((p) => p.stato === 'bozza' && match(p)).sort((a, b) => byDelivery(a, b) || String(a.nome).localeCompare(String(b.nome)));
   if (!prod.length && !bozze.length) {
     $('projectsList').innerHTML = `<div class="empty">${q ? 'Nessun progetto trovato.' : 'Nessun progetto attivo.<br>Tocca <b>+</b> per crearne uno: puoi usarlo anche solo per calcolare un prezzo.'}</div>`;
     return;
@@ -464,7 +484,7 @@ function renderProjectPage() {
 
   $('projectPage').innerHTML = `
     <div class="card">
-      <div class="pills">${statePill(p)}</div>
+      <div class="pills">${statePill(p)}${deliveryPill(p)}</div>
       <label for="pNome">Nome progetto</label>
       <input id="pNome" value="${esc(p.nome || '')}" placeholder="es. Medagliette">
       <label for="pTotPezzi">Pezzi da produrre (totale ordine)</label>
@@ -481,6 +501,8 @@ function renderProjectPage() {
       <div class="line" id="pTot"></div>
       <label for="pNote">Note / cliente / destinatario</label>
       <input id="pNote" value="${esc(p.note || '')}" placeholder="facoltativo">
+      <label for="pConsegna">Data di consegna (facoltativa)</label>
+      <input id="pConsegna" type="date" value="${esc(p.dataConsegna || '')}">
       ${locked ? '<p class="note">I dati di stampa sono bloccati perché il progetto è già in produzione. Per cambiarli riportalo in bozza.</p>' : ''}
     </div>
 
@@ -599,6 +621,7 @@ function readProjectForm() {
   const v = (id) => $(id) ? $(id).value : undefined;
   cur.nome = v('pNome').trim();
   cur.note = v('pNote').trim();
+  cur.dataConsegna = v('pConsegna') || null;
   if (cur.stato === 'bozza') {
     delete cur.piatti;
     cur.pezziPiatto = parseNum(v('pPezzi'));
