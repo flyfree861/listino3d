@@ -1120,6 +1120,44 @@ function quoteCalc(q, D) {
 
 const FASCE = { lancio: 'Lancio', standard: 'Standard', personalizzato: 'Personalizzato', custom: 'Prezzo mio' };
 
+// Scorri un preventivo verso destra per eliminarlo (con conferma)
+let swipeJustHappened = false;
+function bindSwipeDelete() {
+  const list = $('projectsList');
+  let card = null, x0 = 0, y0 = 0, dx = 0, horizontal = null;
+  const reset = (c) => { c.style.transition = 'transform .2s, opacity .2s'; c.style.transform = ''; c.style.opacity = ''; c.style.background = ''; };
+  list.addEventListener('touchstart', (e) => {
+    card = e.target.closest('[data-quote]'); if (!card) return;
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; horizontal = null;
+    card.style.transition = 'none';
+  }, { passive: true });
+  list.addEventListener('touchmove', (e) => {
+    if (!card) return;
+    const mx = e.touches[0].clientX - x0, my = e.touches[0].clientY - y0;
+    if (horizontal === null && (Math.abs(mx) > 8 || Math.abs(my) > 8)) horizontal = Math.abs(mx) > Math.abs(my) * 1.3;
+    if (!horizontal) return;
+    dx = Math.max(0, mx);
+    card.style.transform = `translateX(${dx}px)`;
+    card.style.opacity = String(Math.max(0.35, 1 - dx / 400));
+    card.style.background = dx > 110 ? 'var(--bad-soft)' : '';
+  }, { passive: true });
+  const end = async () => {
+    if (!card) return;
+    const c = card; card = null;
+    if (!horizontal) return;
+    swipeJustHappened = true; setTimeout(() => { swipeJustHappened = false; }, 400);
+    if (dx <= 110) return reset(c);
+    c.style.transition = 'transform .2s'; c.style.transform = 'translateX(110%)';
+    const q = getRec('quotes', c.dataset.quote);
+    await new Promise((r) => setTimeout(r, 180));
+    if (q && confirm(`Sei sicuro di voler eliminare il preventivo "${q.nome}"?`)) {
+      del('quotes', q.id); await committed('Preventivo eliminato'); renderProjects();
+    } else reset(c);
+  };
+  list.addEventListener('touchend', end);
+  list.addEventListener('touchcancel', () => { if (card) { reset(card); card = null; } });
+}
+
 function renderQuotes() {
   const D = data();
   const qs = $('searchProjects').value.trim().toLowerCase();
@@ -1133,7 +1171,7 @@ function renderQuotes() {
       <div class="muted">${nf(q.pezzi || 0)} pezzi${q.cliente ? ' · ' + esc(q.cliente) : ''}</div>
       ${c ? `<div class="line">${FASCE[q.fascia || 'standard']}: <b>${fmt(c.scelto)}</b> a pezzo · totale <b>${fmt(c.totale)}</b> · costo ${fmt(c.pi.costoPezzo)}/pz</div>` : '<div class="line">Dati incompleti</div>'}
     </div>`;
-  }).join('') : `<div class="empty">${qs ? 'Nessun preventivo trovato.' : 'Nessun preventivo.<br>Tocca <b>+</b> per farne uno al volo, senza slicer: bastano quantità e grammi stimati.'}</div>`;
+  }).join('') + '<p class="note" style="text-align:center">Scorri un preventivo verso destra per eliminarlo.</p>' : `<div class="empty">${qs ? 'Nessun preventivo trovato.' : 'Nessun preventivo.<br>Tocca <b>+</b> per farne uno al volo, senza slicer: bastano quantità e grammi stimati.'}</div>`;
 }
 
 function openQuote(id) {
@@ -1456,7 +1494,9 @@ async function saveSettings() {
 // Eventi, login, avvio
 // ---------------------------------------------------------------------------
 function bindEvents() {
+  bindSwipeDelete();
   $('projectsList').addEventListener('click', (e) => {
+    if (swipeJustHappened) { swipeJustHappened = false; return; }
     const q = e.target.closest('[data-quote]'); if (q) return openQuote(q.dataset.quote);
     const c = e.target.closest('[data-project]'); if (c) openProject(c.dataset.project, 'projects');
   });
